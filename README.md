@@ -122,6 +122,8 @@ Sharing details, meta JSON, and slice manifests are cached in memory for 60 seco
 
 Successful tool results keep the complete payload in `structuredContent`. `content[0].text` contains only a short summary, so the same JSON is not counted twice in the model context. If your MCP client does not read `structuredContent`, pass `includeFullText: true` to any data tool (`list_artboards`, `get_artboard_spec`, `get_artboard_image`, `download_slice`) to receive the full JSON as text instead. `debug_collect_network` keeps full records in the text channel because those records are the diagnostic output itself.
 
+All headless tools reuse one browser page, so the sharing page is opened only once per session instead of once per tool call. The headed login window uses an exclusive page and mode switches wait for in-flight calls to finish.
+
 ## Security Notes
 
 Remote metadata and artifact downloads are restricted to `https://codesign.qq.com` and `https://cdn*.codesign.qq.com`. Unsupported hosts fail explicitly with `REMOTE_URL_NOT_ALLOWED`.
@@ -331,6 +333,8 @@ CODESIGN_LOG_LEVEL=info
 分享详情、标注 JSON 和切图清单会在内存中缓存 60 秒（`CODESIGN_CACHE_TTL_MS`，单位毫秒），相同资源的并发调用会合并为一次请求。设为 `0` 可关闭缓存。缓存只存在于当前进程，不会写入磁盘。
 
 工具成功结果把完整数据放在 `structuredContent` 中，`content[0].text` 只返回简短摘要，避免同一份 JSON 在模型上下文里被计算两次。如果你的 MCP 客户端不读取 `structuredContent`，可以对任意数据工具（`list_artboards`、`get_artboard_spec`、`get_artboard_image`、`download_slice`）传 `includeFullText: true`，改为接收完整 JSON 文本。`debug_collect_network` 的诊断记录本身就是输出内容，因此仍在文本通道中保留完整记录。
+
+所有 headless 工具复用同一个浏览器页面，分享页在每个会话中只打开一次，而不是每次工具调用都打开。登录用的 headed 窗口使用独占页面，模式切换会等待正在进行的调用结束。
 
 ## 安全说明
 

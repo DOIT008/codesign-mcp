@@ -164,13 +164,24 @@ export async function getSharingDetail(
 }
 
 // 确保 page 在 codesign.qq.com 同源上下文。
-// 直接打开分享页（无需登录就能加载），cookie/state 会就位。
-async function ensureOnOrigin(page: Page, sharingId: string): Promise<void> {
+// headless 工具共享同一个 page，并发调用会合并成一次导航。
+const pendingNavigations = new WeakMap<Page, Promise<void>>();
+
+export async function ensureOnOrigin(page: Page, sharingId: string): Promise<void> {
   const current = page.url();
   if (current.startsWith(config.origin)) return;
+  const pending = pendingNavigations.get(page);
+  if (pending) return pending;
   const target = `${config.origin}/app/s/${sharingId}`;
   log.debug({ target }, 'navigating to sharing page for origin context');
-  await page.goto(target, { waitUntil: 'domcontentloaded', timeout: config.navTimeoutMs });
+  const navigation = page
+    .goto(target, { waitUntil: 'domcontentloaded', timeout: config.navTimeoutMs })
+    .then(() => undefined)
+    .finally(() => {
+      pendingNavigations.delete(page);
+    });
+  pendingNavigations.set(page, navigation);
+  return navigation;
 }
 
 // 检查是否需要登录（探测 /api/user 的便捷封装）
