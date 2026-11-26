@@ -40,6 +40,7 @@ interface VerifyInput {
   remBasePx?: number;
   scale?: number;
   checks?: VerifyCheck[];
+  allowUnusedSlices?: string[];
   includeFullText?: boolean;
 }
 
@@ -76,7 +77,12 @@ const inputSchema = objectSchema(
     checks: {
       type: 'array',
       items: { type: 'string', enum: [...VERIFY_CHECKS] },
-      description: 'Dimensions to verify. Defaults to all.',
+      description: 'Dimensions to verify. Defaults to all (including maintainability).',
+    },
+    allowUnusedSlices: {
+      type: 'array',
+      items: { type: 'string', minLength: 1 },
+      description: 'Slice objectIds intentionally omitted from this page; exempts them from SLICE_UNUSED.',
     },
     includeFullText: { type: 'boolean', default: false },
   },
@@ -90,9 +96,10 @@ export function registerVerifyRenderingTool(server: McpServer): void {
       title: 'Verify Rendering Against Design',
       description:
         'Re-fetches the official CoDesign spec (bypassing any LLM-supplied measurements), rebuilds platformSpec, ' +
-        'then statically checks generated code against the design for size, slice scale, color, typography, radius, and hierarchy. ' +
+        'then statically checks generated code against the design for size, slice scale, color, typography, radius, hierarchy, and code maintainability. ' +
         'Anchors are data-slice-id="<layerObjectId>" attributes or /* slice:<layerObjectId> */ comments. ' +
-        'Returns per-issue file/line, a reviewRequired list for unresolvable visual areas, and ok=false when any hard check fails. ' +
+        'CSS custom properties (var(--token)) and class-linked style rules are resolved across the supplied codeFiles, so token-based and scoped styles stay verifiable. ' +
+        'Returns per-issue file/line, machine-counted maintainability metrics, a reviewRequired list for unresolvable visual areas, and ok=false when any hard check fails. ' +
         'This tool never modifies files; use its issues to fix code before finishing.',
       inputSchema,
       annotations: { readOnlyHint: true, destructiveHint: false, idempotentHint: true, openWorldHint: true },
@@ -102,7 +109,7 @@ export function registerVerifyRenderingTool(server: McpServer): void {
         sharingUrl, password, screenId, objectId, screenName,
         expectedScreenId, expectedScreenName, codeFiles,
         targetPlatform, targetUnit, customScale, customWidth, remBasePx,
-        scale, checks, includeFullText,
+        scale, checks, allowUnusedSlices, includeFullText,
       } = args;
       let sharingId: string;
       try {
@@ -181,6 +188,7 @@ export function registerVerifyRenderingTool(server: McpServer): void {
           manifest,
           scale: scale ?? 2,
           checks: checks && checks.length > 0 ? checks : undefined,
+          allowUnusedSlices,
         });
 
         return toolSuccess({
@@ -204,6 +212,7 @@ export function registerVerifyRenderingTool(server: McpServer): void {
           reviewRequired: report.reviewRequired,
           anchors: report.anchors,
           checkedSlices: report.checkedSlices,
+          metrics: report.metrics,
           files: files.map((file) => file.path),
         }, includeFullText, summarizeVerifyPayload);
       } catch (err) {

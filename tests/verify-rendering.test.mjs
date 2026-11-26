@@ -73,8 +73,8 @@ function baseInput(files, overrides = {}) {
   };
 }
 
-test('VERIFY_CHECKS lists all six dimensions', () => {
-  assert.deepEqual([...VERIFY_CHECKS], ['size', 'scale', 'color', 'typography', 'radius', 'hierarchy']);
+test('VERIFY_CHECKS lists all seven dimensions', () => {
+  assert.deepEqual([...VERIFY_CHECKS], ['size', 'scale', 'color', 'typography', 'radius', 'hierarchy', 'maintainability']);
 });
 
 test('matching design size passes without errors', () => {

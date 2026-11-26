@@ -1,5 +1,19 @@
 # Changelog
 
+## 0.3.7 - 2026-11-26
+
+### Added
+
+- `verify_rendering` now resolves CSS custom properties (`var(--token)` / `var(--token, fallback)`) across all supplied `codeFiles`, so token-based styles stay verifiable without scattering literal dimensions into components. Pass the file defining the tokens (for example a theme/global stylesheet) alongside the page file.
+- Attribute anchors are now linked to CSS rules by `class`/`className` across the whole submitted file set, so scoped styles at the end of a Vue SFC (or in a separate stylesheet) are checked instead of being reported `UNVERIFIABLE` solely because they sit beyond the old 16-line anchor window.
+- Added a seventh verification dimension, `maintainability`, with machine-counted `metrics` per file: line count, `position:absolute` count, `!important` count, console calls, duplicated template blocks, and repeated literal colors/font-sizes. It emits warning-level issues (`FILE_TOO_LARGE`, `ABSOLUTE_OVERUSE`, `NO_IMPORTANT`, `CONSOLE_LEFT`, `DUPLICATED_BLOCK`, `MAGIC_VALUE`, `MEANINGLESS_NAME`) that never flip `ok` to false, so agents can be held to maintainable code without conflating style with design correctness.
+- Added `allowUnusedSlices` to `verify_rendering`: slice objectIds intentionally omitted from a partial restoration are exempted from `SLICE_UNUSED`.
+- The text summary of `verify_rendering` now includes the aggregated maintainability metrics.
+
+### Tests
+
+- Added 11 regression tests covering variable resolution, cross-file/class style linking, token-based double-scale detection, duplicate detection, all maintainability codes, checks filtering, slice exemption, and summary metrics; full suite 173/173 passing.
+
 ## 0.3.6 - 2026-11-26
 
 ### Added

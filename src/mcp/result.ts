@@ -157,6 +157,15 @@ export function summarizeVerifyPayload(payload: Record<string, unknown>): string
       lines.push(`  [${issue.code}] ${issue.dimension ?? '?'} ${issue.layerObjectId ?? ''} @ ${issue.file ?? ''}:${issue.line ?? 0}`);
     }
   }
+  const metrics = payload.metrics as { files?: Array<{ path?: string; absoluteCount?: number; duplicatedBlocks?: number; repeatedLiterals?: number; consoleLogCount?: number }> } | undefined;
+  const files = metrics?.files ?? [];
+  if (files.length > 0) {
+    const total = (key: 'absoluteCount' | 'duplicatedBlocks' | 'repeatedLiterals' | 'consoleLogCount'): number =>
+      files.reduce((sum, file) => sum + (file[key] ?? 0), 0);
+    lines.push(
+      `maintainability: files=${files.length} absolute=${total('absoluteCount')} duplicated=${total('duplicatedBlocks')} magic=${total('repeatedLiterals')} console=${total('consoleLogCount')}`,
+    );
+  }
   const review = Array.isArray(payload.reviewRequired) ? payload.reviewRequired.length : 0;
   if (review > 0) lines.push(`reviewRequired: ${review} layers need manual review`);
   lines.push('Full data is available in structuredContent.');
