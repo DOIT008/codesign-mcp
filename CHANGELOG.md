@@ -4,7 +4,7 @@
 
 ### Fixed
 
-- Accepted password-protected sharing-detail responses that expose `screens` at the top level instead of nesting them under `designs`, preventing valid HTTP 200 responses from being reported as `SHARING_NOT_FOUND`. ([#5](https://github.com/ccpopy/codesign-mcp/issues/5))
+- Accepted password-protected sharing-detail responses that expose `screens` at the top level instead of nesting them under `designs`, preventing valid HTTP 200 responses from being reported as `SHARING_NOT_FOUND`. ([#5](https://github.com/DOIT008/codesign-mcp/issues/5))
 - Preserved the existing nested `designs` response shape and sharing-detail diagnostics.
 
 ### Tests
@@ -15,7 +15,7 @@
 
 ### Fixed
 
-- Encoded slice `object_id` values as reversible, cross-platform filename components so Windows downloads no longer fail for Figma-style IDs containing reserved characters such as `:`. ([#3](https://github.com/ccpopy/codesign-mcp/issues/3))
+- Encoded slice `object_id` values as reversible, cross-platform filename components so Windows downloads no longer fail for Figma-style IDs containing reserved characters such as `:`. ([#3](https://github.com/DOIT008/codesign-mcp/issues/3))
 - Preserved existing UUID-style slice filenames while avoiding collisions with identifiers that already contain percent-encoded text.
 
 ### Tests

@@ -1,6 +1,6 @@
-# codesign-mcp
+# codesign-mcp-next
 
-[![npm version](https://img.shields.io/npm/v/codesign-mcp?label=npm&color=cb3837)](https://www.npmjs.com/package/codesign-mcp)
+[![npm version](https://img.shields.io/npm/v/codesign-mcp-next?label=npm&color=cb3837)](https://www.npmjs.com/package/codesign-mcp-next)
 [![Node.js](https://img.shields.io/badge/node-%3E%3D20-339933?logo=node.js&logoColor=white)](https://nodejs.org/)
 [![TypeScript](https://img.shields.io/badge/TypeScript-5.9-3178c6?logo=typescript&logoColor=white)](https://www.typescriptlang.org/)
 [![MCP](https://img.shields.io/badge/MCP-stdio-000000)](https://modelcontextprotocol.io/)
@@ -26,14 +26,14 @@ Local MCP server for Tencent CoDesign sharing links. It exposes artboards, offic
 Run directly with npm:
 
 ```bash
-npx -y codesign-mcp
+npx -y codesign-mcp-next
 ```
 
 Or install globally:
 
 ```bash
-npm install -g codesign-mcp
-codesign-mcp
+npm install -g codesign-mcp-next
+codesign-mcp-next
 ```
 
 ## MCP Configuration
@@ -43,9 +43,9 @@ For most MCP clients, use the zero-config form:
 ```json
 {
   "mcpServers": {
-    "codesign-mcp": {
+    "codesign-mcp-next": {
       "command": "npx",
-      "args": ["-y", "codesign-mcp@latest"]
+      "args": ["-y", "codesign-mcp-next@latest"]
     }
   }
 }
@@ -77,9 +77,9 @@ Use the `codesign_status` tool to inspect `workspaceRoot` and `workspaceRootSour
 ```json
 {
   "mcpServers": {
-    "codesign-mcp": {
+    "codesign-mcp-next": {
       "command": "npx",
-      "args": ["-y", "codesign-mcp@latest"],
+      "args": ["-y", "codesign-mcp-next@latest"],
       "cwd": "F:/your-project"
     }
   }
@@ -166,9 +166,9 @@ Preview screenshots are for visual comparison, not for production slicing.
 The optional userscript adds a **Copy for AI** button beside the currently selected CoDesign layer. It reads the active screen and layer identifiers already present in the CoDesign page, then copies a structured Agent prompt. It does not make network requests or copy the sharing password.
 
 1. Install [Tampermonkey](https://www.tampermonkey.net/) or another compatible userscript manager.
-2. Open [codesign-ai-selection.user.js](https://raw.githubusercontent.com/ccpopy/codesign-mcp/main/userscripts/codesign-ai-selection.user.js) and confirm installation.
+2. Open [codesign-ai-selection.user.js](https://raw.githubusercontent.com/DOIT008/codesign-mcp/main/userscripts/codesign-ai-selection.user.js) and confirm installation.
 3. Open a CoDesign sharing page in annotation mode and select a layer or group in the layer tree.
-4. Click **Copy for AI** in the right inspector, then paste the copied prompt into an Agent that has `codesign-mcp` connected.
+4. Click **Copy for AI** in the right inspector, then paste the copied prompt into an Agent that has `codesign-mcp-next` connected.
 5. Provide the sharing password separately when the link requires one.
 
 The copied reference has this shape:
@@ -194,18 +194,18 @@ Before asking an Agent to implement a page from CoDesign, make sure the MCP serv
 Use this prompt template with your Agent. Replace `<PROJECT_ID>` with the value after `/s/` in the CoDesign sharing URL. If the sharing link does not require a password, remove the password line.
 
 ```text
-Implement the column page from this CoDesign design:
+Implement this CoDesign design as a page:
 
 Link: https://codesign.qq.com/s/<PROJECT_ID>
 Password: <PASSWORD_IF_REQUIRED>
 
 Requirements:
-1. First call the codesign-mcp list_artboards tool to get the artboard list.
+1. First call the codesign-mcp-next list_artboards tool to get the artboard list.
 2. Then call get_artboard_spec to get the official specification data. If the target platform is known, pass it as targetPlatform, for example `Android`, `iOS`, or `微信小程序`. If the user specifies custom platform settings, also pass targetUnit, customScale, customWidth, and remBasePx.
 3. Unless the user explicitly requests an absolute/canvas-style implementation, translate the coordinates into semantic page structure and normal document flow before coding. Prefer Flexbox/Grid for page layout and avoid recreating the whole page as globally absolute-positioned layers. An explicit user layout requirement takes precedence over this default.
 4. If the design contains designer-exported slice assets, prefer download_slice. Do not crop assets from the full-page preview image.
 5. Use preview images only for visual comparison, not as production asset sources.
-6. Implement the page in the column directory.
+6. Implement the page in the target directory specified by the user; if none is given, ask before writing files.
 ```
 
 ## Development
@@ -224,7 +224,7 @@ Before first publish:
 
 1. Configure npm Trusted Publishing for this GitHub repository and `.github/workflows/publish.yml`.
 2. Enable 2FA on npm for account and publishing protection.
-3. Create and push a version tag, for example `v0.1.7`, to trigger publication.
+3. Create and push a version tag matching `package.json`, for example `v0.3.2`, to trigger publication.
 
 ## License
 
@@ -234,7 +234,7 @@ MIT
 
 ## 简体中文
 
-[English](#codesign-mcp) | 简体中文
+[English](#codesign-mcp-next) | 简体中文
 
 面向腾讯 CoDesign 分享链接的本地 MCP 服务器。它为设计还原流程提供画板列表、官方图层标注、预览图以及设计师导出的切图资源。
 
@@ -254,14 +254,14 @@ MIT
 直接通过 npm 运行：
 
 ```bash
-npx -y codesign-mcp
+npx -y codesign-mcp-next
 ```
 
 也可以全局安装：
 
 ```bash
-npm install -g codesign-mcp
-codesign-mcp
+npm install -g codesign-mcp-next
+codesign-mcp-next
 ```
 
 ## MCP 配置
@@ -271,9 +271,9 @@ codesign-mcp
 ```json
 {
   "mcpServers": {
-    "codesign-mcp": {
+    "codesign-mcp-next": {
       "command": "npx",
-      "args": ["-y", "codesign-mcp@latest"]
+      "args": ["-y", "codesign-mcp-next@latest"]
     }
   }
 }
@@ -304,9 +304,9 @@ MCP 服务仅启动、列出工具或读取提示词/资源时，不会创建默
 ```json
 {
   "mcpServers": {
-    "codesign-mcp": {
+    "codesign-mcp-next": {
       "command": "npx",
-      "args": ["-y", "codesign-mcp@latest"],
+      "args": ["-y", "codesign-mcp-next@latest"],
       "cwd": "F:/your-project"
     }
   }
@@ -393,9 +393,9 @@ list_artboards -> get_artboard_spec -> download_slice
 可选油猴脚本会在当前选中图层的右侧标注面板中增加“复制给 AI”按钮。它读取 CoDesign 页面中已有的当前画板 ID 和图层对象 ID，生成结构化 Agent 提示词；脚本不会请求额外接口，也不会复制分享访问码。
 
 1. 安装 [Tampermonkey](https://www.tampermonkey.net/) 或其他兼容的用户脚本管理器。
-2. 打开 [codesign-ai-selection.user.js](https://raw.githubusercontent.com/ccpopy/codesign-mcp/main/userscripts/codesign-ai-selection.user.js) 并确认安装。
+2. 打开 [codesign-ai-selection.user.js](https://raw.githubusercontent.com/DOIT008/codesign-mcp/main/userscripts/codesign-ai-selection.user.js) 并确认安装。
 3. 在 CoDesign 分享页进入标注模式，从左侧图层树选中一个图层或分组。
-4. 点击右侧检查器中的“复制给 AI”，把提示词粘贴到已经连接 `codesign-mcp` 的 Agent。
+4. 点击右侧检查器中的“复制给 AI”，把提示词粘贴到已经连接 `codesign-mcp-next` 的 Agent。
 5. 分享链接需要访问码时，单独向 Agent 提供访问码。
 
 复制出的引用格式如下：
@@ -421,18 +421,18 @@ list_artboards -> get_artboard_spec -> download_slice
 可以把下面的模板发给 Agent。将 `<PROJECT_ID>` 替换为 CoDesign 分享链接中 `/s/` 后面的项目 ID。如果分享链接不需要密码，删除密码这一行。
 
 ```text
-请基于这个 CoDesign 设计稿实现栏目页面：
+请基于这个 CoDesign 设计稿实现页面：
 
 链接：https://codesign.qq.com/s/<PROJECT_ID>
 密码：<PASSWORD_IF_REQUIRED>
 
 要求：
-1. 先调用 codesign-mcp 的 list_artboards 获取画板列表。
+1. 先调用 codesign-mcp-next 的 list_artboards 获取画板列表。
 2. 再调用 get_artboard_spec 获取官方标注信息。如果已知目标开发平台，把它作为 targetPlatform 传入，例如 `Android`、`iOS` 或 `微信小程序`。如果用户指定了自定义平台设置，同时传入 targetUnit、customScale、customWidth 和 remBasePx。
 3. 除非用户明确要求 absolute/canvas 式实现，否则先把坐标信息转译为语义化页面结构和正常文档流，再开始编码。页面布局优先使用 Flexbox/Grid，不要把整页还原成全局绝对定位图层；用户明确提出的布局要求优先于该默认策略。
 4. 如果设计稿里存在设计师导出的切图资源，优先调用 download_slice 获取，不要从整页预览图里自行裁图。
 5. 预览图只用于视觉对比，不作为生产切图来源。
-6. 在 column 目录中实现页面。
+6. 在用户指定的目标目录中实现页面；若用户未指定，先询问再写文件。
 ```
 
 ## 开发
@@ -451,7 +451,7 @@ node scripts/stdio-smoke.mjs
 
 1. 在 npm 上为这个 GitHub 仓库和 `.github/workflows/publish.yml` 配置 Trusted Publishing。
 2. 为 npm 账号开启 2FA。
-3. 创建并推送版本标签，例如 `v0.1.7`，触发发布。
+3. 创建并推送与 `package.json` 一致的版本标签，例如 `v0.3.2`，触发发布。
 
 ## 许可证
 
