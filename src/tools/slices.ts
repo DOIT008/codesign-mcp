@@ -2,8 +2,9 @@ import { createHash } from 'node:crypto';
 import type { McpServer } from '../mcp/server.js';
 import { objectSchema } from '../mcp/schema.js';
 import { browserManager } from '../browser/manager.js';
-import { getCachedSharingDetail, fetchCachedSliceManifest } from '../codesign/cache.js';
+import { getCachedSharingDetail, fetchCachedSpec, fetchCachedSliceManifest } from '../codesign/cache.js';
 import { findSliceByObjectId } from '../codesign/slices.js';
+import { buildPlatformSpec } from '../codesign/platform.js';
 import { inspectManifest, integrityView } from '../codesign/integrity.js';
 import { CodesignError } from '../codesign/errors.js';
 import { normalizeCodesignAssetUrl, parseSharingId } from '../utils/url.js';
@@ -31,6 +32,11 @@ interface SlicesInput {
   layerObjectId: string;
   format?: string;
   scales?: number[];
+  targetPlatform?: string;
+  targetUnit?: string;
+  customScale?: number;
+  customWidth?: number;
+  remBasePx?: number;
   includeFullText?: boolean;
 }
 
@@ -55,6 +61,14 @@ const inputSchema = objectSchema(
       items: { type: 'number' },
       description: 'Filter exportables by scale list, e.g. [1, 2]',
     },
+    targetPlatform: {
+      type: 'string',
+      description: 'Optional platform used to return the design layout size together with each slice.',
+    },
+    targetUnit: { type: 'string' },
+    customScale: { type: 'number', minimum: 0 },
+    customWidth: { type: 'number', minimum: 0 },
+    remBasePx: { type: 'number', minimum: 0 },
     includeFullText: {
       type: 'boolean',
       default: false,
@@ -73,12 +87,18 @@ export function registerSlicesTool(server: McpServer): void {
       description:
         'Downloads designer-exported CoDesign slice assets from the official slice manifest, matched by layer object_id. ' +
         'Use this for implementation assets instead of using Python/PIL or screenshot cropping. ' +
-        'Returns local paths under <workspaceRoot>/.codesign-mcp/artifacts/<sharingId>/slices/. Optional filters: format and scales.',
+        'Returns local paths under <workspaceRoot>/.codesign-mcp/artifacts/<sharingId>/slices/. Optional filters: format and scales. ' +
+        'Pass targetPlatform (with the same unit/width options used for get_artboard_spec) to also receive slice.designSize, ' +
+        'the converted layout width/height the image must be displayed at in code — 2x assets must be shown at this size, not their pixel size.',
       inputSchema,
       annotations: { readOnlyHint: false, destructiveHint: false, idempotentHint: true, openWorldHint: true },
     },
     async (args: SlicesInput) => {
-      const { sharingUrl, password, screenId, objectId, screenName, layerObjectId, format, scales, includeFullText } = args;
+      const {
+        sharingUrl, password, screenId, objectId, screenName, layerObjectId,
+        format, scales, targetPlatform, targetUnit, customScale, customWidth,
+        remBasePx, includeFullText,
+      } = args;
       let sharingId: string;
       try {
         sharingId = parseSharingId(sharingUrl);
@@ -152,6 +172,51 @@ export function registerSlicesTool(server: McpServer): void {
               })),
             }),
           );
+        }
+
+        // designSize 是「该图层在代码里应显示的布局宽高」，由 platformSpec 换算而来。
+        // 只有显式传 targetPlatform 时才额外拉 spec（有缓存），避免改变默认请求量。
+        let designSize:
+          | { width: number; height: number; unit: string; source: 'platformSpec' | 'sliceRect' }
+          | undefined;
+        if (targetPlatform) {
+          if (picked.meta_url) {
+            try {
+              const spec = await fetchCachedSpec(picked.meta_url);
+              const platformSpec = buildPlatformSpec(spec, targetPlatform, {
+                targetUnit,
+                customScale,
+                customWidth,
+                remBasePx,
+              });
+              const platformLayer = [...platformSpec.layers, ...platformSpec.groups].find(
+                (layer) => layer.objectId === slice.object_id,
+              );
+              designSize = platformLayer
+                ? {
+                    width: platformLayer.rect.width,
+                    height: platformLayer.rect.height,
+                    unit: platformLayer.rect.unit,
+                    source: 'platformSpec',
+                  }
+                : {
+                    width: slice.rect.width,
+                    height: slice.rect.height,
+                    unit: platformSpec.unit,
+                    source: 'sliceRect',
+                  };
+            } catch (err) {
+              log.warn({ err: (err as Error).message }, 'download_slice designSize lookup failed');
+            }
+          }
+          if (!designSize) {
+            designSize = {
+              width: slice.rect.width,
+              height: slice.rect.height,
+              unit: 'px',
+              source: 'sliceRect',
+            };
+          }
         }
 
         const integrity = integrityView(inspectManifest(manifest));
@@ -243,6 +308,7 @@ export function registerSlicesTool(server: McpServer): void {
             name: slice.name,
             objectId: slice.object_id,
             rect: slice.rect,
+            designSize,
           },
           requested: filteredExportables.length,
           downloaded: downloads.length,

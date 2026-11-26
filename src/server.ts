@@ -5,6 +5,7 @@ import { registerArtboardsTool } from './tools/artboards.js';
 import { registerSpecTool } from './tools/spec.js';
 import { registerImageTool } from './tools/image.js';
 import { registerSlicesTool } from './tools/slices.js';
+import { registerVerifyRenderingTool } from './tools/verify-rendering.js';
 import { registerDiagnosticsTool } from './tools/diagnostics.js';
 import { registerDesignToCodePrompt } from './prompts/design-to-code.js';
 import { registerWorkflowResource } from './resources/workflow.js';
@@ -36,6 +37,7 @@ export function buildServer(): McpServer {
   registerSpecTool(server);
   registerImageTool(server);
   registerSlicesTool(server);
+  registerVerifyRenderingTool(server);
   registerDiagnosticsTool(server);
   registerDesignToCodePrompt(server);
   registerWorkflowResource(server);

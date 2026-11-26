@@ -118,14 +118,15 @@ CODESIGN_LOG_LEVEL=info
 - `list_artboards`: Resolve a CoDesign sharing URL into designs and artboards.
 - `get_artboard_spec`: Fetch official CoDesign `meta_url` specs with layers, text, colors, CSS, groups, and slice metadata. Every response includes a `spec.hierarchy` tree built from `parent_id` and `layerIndex`; each node carries `rect` (artboard-absolute), `relativeRect` (relative to the artboard), and `relativeToParent` (relative to its direct parent) so a full-page layout can be mapped to DOM without rebuilding the tree yourself. With `layerObjectId`, `selectionScope` can be `layer`, `subtree`, or `region`; selected responses also include flat layers/groups, selection bounds, and relative coordinates. Optional `targetPlatform` accepts natural-language platform names such as `web`, `Android`, `安卓`, `iOS`, `微信小程序`, or `mini program` and returns platform-adjusted metadata. Optional `targetUnit`, `customScale`, `customWidth`, and `remBasePx` mirror CoDesign's platform settings.
 - `get_artboard_image`: Fetch preview or cover images for visual comparison.
-- `download_slice`: Download designer-exported slice assets from the official slice manifest.
+- `download_slice`: Download designer-exported slice assets from the official slice manifest. Passing the same `targetPlatform`/unit/width options used for `get_artboard_spec` also returns `slice.designSize` — the converted layout width/height the slice must be displayed at. A 2x asset must be shown at `designSize`, never at its pixel size.
+- `verify_rendering`: Re-fetch the official spec (ignoring any LLM-supplied measurements), rebuild `platformSpec`, and statically check generated code against the design. Mark each slice usage with a `data-slice-id="<layerObjectId>"` attribute or a `/* slice:<layerObjectId> */` comment, pass the code files plus the same platform options, and it reports per-file/line issues across size, scale, color, typography, radius, and hierarchy, plus a `reviewRequired` list for areas that cannot be statically resolved. Returns `ok: false` when any hard check fails. Read-only.
 - `debug_collect_network`: Collect a redacted network summary for diagnosis.
 
 ## Caching and tool output
 
 Sharing details, meta JSON, and slice manifests are cached in memory for 60 seconds (`CODESIGN_CACHE_TTL_MS`, in milliseconds). Concurrent calls for the same resource share a single request. Set the variable to `0` to disable caching. The cache is process-local and is never written to disk.
 
-Successful tool results keep the complete payload in `structuredContent`. `content[0].text` contains only a short summary, so the same JSON is not counted twice in the model context. For `get_artboard_spec`, the text summary additionally includes a two-level `hierarchy` skeleton, artboard dimensions, layer/group/slice counts, and any integrity warnings, so clients that ignore `structuredContent` still receive the structural cues needed for design-to-code. If your MCP client does not read `structuredContent`, pass `includeFullText: true` to any data tool (`list_artboards`, `get_artboard_spec`, `get_artboard_image`, `download_slice`) to receive the full JSON as text instead. `debug_collect_network` keeps full records in the text channel because those records are the diagnostic output itself.
+Successful tool results keep the complete payload in `structuredContent`. `content[0].text` contains only a short summary, so the same JSON is not counted twice in the model context. For `get_artboard_spec`, the text summary additionally includes a two-level `hierarchy` skeleton, artboard dimensions, layer/group/slice counts, and any integrity warnings, so clients that ignore `structuredContent` still receive the structural cues needed for design-to-code. If your MCP client does not read `structuredContent`, pass `includeFullText: true` to any data tool (`list_artboards`, `get_artboard_spec`, `get_artboard_image`, `download_slice`, `verify_rendering`) to receive the full JSON as text instead. `debug_collect_network` keeps full records in the text channel because those records are the diagnostic output itself.
 
 All headless tools reuse one browser page, so the sharing page is opened only once per session instead of once per tool call. The headed login window uses an exclusive page and mode switches wait for in-flight calls to finish.
 
@@ -147,7 +148,7 @@ Remote metadata and artifact downloads are restricted to `https://codesign.qq.co
 
 ## Prompts
 
-- `implement_codesign_page`: Generate a structured design-to-code prompt for a full page or copied CoDesign selection. It guides an Agent to call `list_artboards`, `get_artboard_spec`, and `download_slice` in the intended order.
+- `implement_codesign_page`: Generate a structured design-to-code prompt for a full page or copied CoDesign selection. It guides an Agent to call `list_artboards`, `get_artboard_spec`, `download_slice`, and `verify_rendering` in the intended order.
 
 ## Resources
 
@@ -156,10 +157,10 @@ Remote metadata and artifact downloads are restricted to `https://codesign.qq.co
 For design-to-code work, prefer this flow:
 
 ```text
-list_artboards -> get_artboard_spec -> download_slice
+list_artboards -> get_artboard_spec -> download_slice -> (write code) -> verify_rendering
 ```
 
-Preview screenshots are for visual comparison, not for production slicing.
+`verify_rendering` re-fetches the spec itself, so its expected values never depend on numbers copied into the prompt. Check its `issues` and `reviewRequired`, fix the code, and re-run until `ok: true`. Preview screenshots are for visual comparison, not for production slicing.
 
 ## CoDesign AI Selection Userscript
 
@@ -345,14 +346,15 @@ CODESIGN_LOG_LEVEL=info
 - `list_artboards`：把 CoDesign 分享链接解析为设计稿和画板列表。
 - `get_artboard_spec`：读取官方 CoDesign `meta_url` 标注数据，包括图层、文字、颜色、CSS、分组和切图元数据。所有结果都包含按 `parent_id` 与 `layerIndex` 构建的 `spec.hierarchy` 层级树；每个节点带 `rect`（相对画板绝对坐标）、`relativeRect`（相对画板）和 `relativeToParent`（相对直接父节点），整页还原可直接映射为 DOM，无需自行拼树。传入 `layerObjectId` 后，`selectionScope` 可设为 `layer`、`subtree` 或 `region`；选区结果还包含扁平图层/分组、选区边界和相对坐标。可选的 `targetPlatform` 支持 `web`、`Android`、`安卓`、`iOS`、`微信小程序`、`mini program` 等自然语言平台名称，并返回平台转换后的标注信息。`targetUnit`、`customScale`、`customWidth`、`remBasePx` 对应 CoDesign 的平台设置。
 - `get_artboard_image`：获取预览图或封面图，主要用于视觉对比。
-- `download_slice`：从官方切图清单下载设计师导出的切图资源。
+- `download_slice`：从官方切图清单下载设计师导出的切图资源。传入与 `get_artboard_spec` 相同的 `targetPlatform`/单位/宽度参数时，会同时返回 `slice.designSize`，即该切图在代码中应显示的换算后布局宽高；2x 图必须按 `designSize` 显示，而不是按图片像素尺寸显示。
+- `verify_rendering`：重新拉取官方 spec（不信任任何由模型转录的尺寸），重建 `platformSpec`，然后静态校验生成代码与设计稿是否一致。在每处切图使用点用 `data-slice-id="<图层objectId>"` 属性或 `/* slice:<图层objectId> */` 注释标注，传入代码文件与相同的平台参数，即可按文件/行号返回尺寸、倍率、颜色、字号、圆角、层级六个维度的 issue，并给出 `reviewRequired`（无法静态判定的区域清单）。任一硬性检查失败时返回 `ok: false`。只读，不修改文件。
 - `debug_collect_network`：收集脱敏后的网络摘要，用于诊断。
 
 ## 缓存与工具输出
 
 分享详情、标注 JSON 和切图清单会在内存中缓存 60 秒（`CODESIGN_CACHE_TTL_MS`，单位毫秒），相同资源的并发调用会合并为一次请求。设为 `0` 可关闭缓存。缓存只存在于当前进程，不会写入磁盘。
 
-工具成功结果把完整数据放在 `structuredContent` 中，`content[0].text` 只返回简短摘要，避免同一份 JSON 在模型上下文里被计算两次。`get_artboard_spec` 的文本摘要还会带出两层 `hierarchy` 骨架、画板尺寸、图层/分组/切图数量以及完整性告警，因此不读取 `structuredContent` 的客户端也能拿到还原所需的结构信息。如果你的 MCP 客户端不读取 `structuredContent`，可以对任意数据工具（`list_artboards`、`get_artboard_spec`、`get_artboard_image`、`download_slice`）传 `includeFullText: true`，改为接收完整 JSON 文本。`debug_collect_network` 的诊断记录本身就是输出内容，因此仍在文本通道中保留完整记录。
+工具成功结果把完整数据放在 `structuredContent` 中，`content[0].text` 只返回简短摘要，避免同一份 JSON 在模型上下文里被计算两次。`get_artboard_spec` 的文本摘要还会带出两层 `hierarchy` 骨架、画板尺寸、图层/分组/切图数量以及完整性告警，因此不读取 `structuredContent` 的客户端也能拿到还原所需的结构信息。如果你的 MCP 客户端不读取 `structuredContent`，可以对任意数据工具（`list_artboards`、`get_artboard_spec`、`get_artboard_image`、`download_slice`、`verify_rendering`）传 `includeFullText: true`，改为接收完整 JSON 文本。`debug_collect_network` 的诊断记录本身就是输出内容，因此仍在文本通道中保留完整记录。
 
 所有 headless 工具复用同一个浏览器页面，分享页在每个会话中只打开一次，而不是每次工具调用都打开。登录用的 headed 窗口使用独占页面，模式切换会等待正在进行的调用结束。
 
@@ -374,7 +376,7 @@ CODESIGN_LOG_LEVEL=info
 
 ## 提示词
 
-- `implement_codesign_page`：为完整页面或复制的 CoDesign 选区生成结构化设计还原提示词，引导 Agent 按预期顺序调用 `list_artboards`、`get_artboard_spec` 和 `download_slice`。
+- `implement_codesign_page`：为完整页面或复制的 CoDesign 选区生成结构化设计还原提示词，引导 Agent 按预期顺序调用 `list_artboards`、`get_artboard_spec`、`download_slice` 和 `verify_rendering`。
 
 ## 资源
 
@@ -383,10 +385,10 @@ CODESIGN_LOG_LEVEL=info
 设计还原建议优先使用：
 
 ```text
-list_artboards -> get_artboard_spec -> download_slice
+list_artboards -> get_artboard_spec -> download_slice -> (写代码) -> verify_rendering
 ```
 
-预览截图只适合做视觉对比，不应作为生产切图来源。
+`verify_rendering` 会自行重新拉取 spec，因此期望值不依赖写入提示词的数字。检查其 `issues` 与 `reviewRequired`，修复代码后重跑，直到 `ok: true`。预览截图只适合做视觉对比，不应作为生产切图来源。
 
 ## CoDesign AI 选区油猴脚本
 

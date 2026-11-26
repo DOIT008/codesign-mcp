@@ -1,5 +1,17 @@
 # Changelog
 
+## 0.3.4 - 2026-11-26
+
+### Added
+
+- Added `verify_rendering`, a read-only tool that re-fetches the official spec, rebuilds `platformSpec`, and statically checks generated code for size, slice scale, color, typography, radius, and hierarchy. Slice usages are located via `data-slice-id="<layerObjectId>"` attributes or `/* slice:<layerObjectId> */` comments. It reports per-file/line issues and a `reviewRequired` list for areas that cannot be statically resolved, and returns `ok: false` when a hard check fails.
+- Added `designSize` to `download_slice` results when `targetPlatform` is supplied: the converted layout width/height a slice must be displayed at, so 2x assets are shown at design size rather than pixel size.
+- Added `CODE_FILE_INVALID` for missing, oversized, or out-of-workspace code files passed to `verify_rendering`.
+
+### Changed
+
+- Updated the design-to-code prompt, workflow resource, and skill to mark slice anchors and run `verify_rendering` before finishing.
+
 ## 0.3.3 - 2026-11-26
 
 ### Added

@@ -22,6 +22,7 @@ export const ERROR_CODES = [
   'ARTIFACT_SIZE_MISMATCH',
   'ARTIFACT_MAGIC_MISMATCH',
   'ARTIFACT_PATH_INVALID',
+  'CODE_FILE_INVALID',
 ] as const;
 
 export type ErrorCode = (typeof ERROR_CODES)[number];

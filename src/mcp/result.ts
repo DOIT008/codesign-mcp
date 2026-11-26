@@ -145,6 +145,24 @@ function summarizeIntegrity(value: unknown): string {
   return `integrity: ${integrity.ok === false ? 'failed' : 'ok'}`;
 }
 
+export function summarizeVerifyPayload(payload: Record<string, unknown>): string {
+  const lines: string[] = [payload.ok === false ? 'failed' : 'ok'];
+  const summary = payload.summary as { pass?: number; fail?: number; warn?: number } | undefined;
+  if (summary) lines.push(`checks: pass=${summary.pass ?? 0} fail=${summary.fail ?? 0} warn=${summary.warn ?? 0}`);
+  const issues = Array.isArray(payload.issues) ? (payload.issues as Array<{ code?: string; dimension?: string; layerObjectId?: string; file?: string; line?: number }>) : [];
+  const failed = issues.filter((issue) => /MISMATCH|DOUBLE_SCALE|WRONG_SCALE|UNUSED|UNAVAILABLE|UNRESOLVED|ORDER/.test(issue.code ?? ''));
+  if (failed.length > 0) {
+    lines.push('failed checks (first 5):');
+    for (const issue of failed.slice(0, 5)) {
+      lines.push(`  [${issue.code}] ${issue.dimension ?? '?'} ${issue.layerObjectId ?? ''} @ ${issue.file ?? ''}:${issue.line ?? 0}`);
+    }
+  }
+  const review = Array.isArray(payload.reviewRequired) ? payload.reviewRequired.length : 0;
+  if (review > 0) lines.push(`reviewRequired: ${review} layers need manual review`);
+  lines.push('Full data is available in structuredContent.');
+  return lines.join('\n');
+}
+
 // 诊断记录本身就是给 LLM 阅读的内容，默认保留完整文本但不加缩进。
 export function toolSuccessFull(payload: Record<string, unknown>): ToolResult {
   const structuredContent = { ok: true, ...payload };

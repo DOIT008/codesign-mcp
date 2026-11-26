@@ -93,7 +93,7 @@ export function registerDesignToCodePrompt(server: McpServer): void {
     {
       title: 'Implement CoDesign Page',
       description:
-        'Generate a design-to-code workflow prompt that uses list_artboards, get_artboard_spec, and download_slice in order.',
+        'Generate a design-to-code workflow prompt that uses list_artboards, get_artboard_spec, download_slice, and verify_rendering in order.',
       argsSchema,
     },
     async ({
@@ -184,8 +184,10 @@ Requirements:
 6. If the user specifies a unit, custom scale, target design width, or rem base, pass those as get_artboard_spec.targetUnit, customScale, customWidth, and remBasePx. For example, "1440px design width, rem, 1rem=100px" maps to targetUnit=rem, customWidth=1440, remBasePx=100.
 7. Use spec.platformSpec or platformSelection when returned for platform id, units, converted rects, unit-adjusted CSS, and conversion metadata. Keep the raw CoDesign data available as the source of truth.
 8. Unless the user's current request explicitly requires an absolute-positioned or canvas-style implementation, translate the CoDesign coordinates into semantic page structure and normal document flow before coding. Prefer Flexbox/Grid and existing layout primitives for page layout; do not recreate the whole page as a flat canvas of globally absolute-positioned layers. When the user explicitly requests absolute positioning, honor that instruction and scope positioning to the requested page or selection container where practical. Otherwise reserve absolute/fixed positioning for local overlays or intentionally overlapping elements required by the design.
-9. When the design includes designer-exported slice assets, call download_slice for those assets. Do not crop production assets from the full preview image.
-10. Use get_artboard_image only for visual comparison and final review.
+9. When the design includes designer-exported slice assets, call download_slice for those assets with the same targetPlatform/unit/width options. Use the returned slice.designSize as the CSS display size — a 2x asset is shown at design size, never at its pixel size. Do not crop production assets from the full preview image.
+10. Mark every slice usage in code with data-slice-id="<layerObjectId>" (attribute) or /* slice:<layerObjectId> */ (comment) so it can be verified.
 11. Implement the page in the target directory when one is provided, following the existing project structure and styles.
-12. Surface any CoDesign access, password, login, or missing-spec failure clearly instead of fabricating design data.`;
+12. Before finishing, call verify_rendering with the written code files and the same platform options. Fix every error issue (size, scale, color, typography, radius, hierarchy), re-run until ok is true, and manually review every item in reviewRequired. It re-fetches the official spec itself, so pass the real file paths, not copied measurements.
+13. Use get_artboard_image only for visual comparison and final review.
+14. Surface any CoDesign access, password, login, or missing-spec failure clearly instead of fabricating design data.`;
 }
