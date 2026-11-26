@@ -45,4 +45,23 @@ jobs:
         run: npm test
 
       - name: Publish
-        run: npm publish --access public
+        shell: bash
+        run: |
+          {
+            echo "### Publish diagnostics"
+            echo "node: $(node --version)"
+            echo "npm: $(npm --version)"
+            echo "registry: $(npm config get registry)"
+            echo "package: $(node -p "require('./package.json').name")@$(node -p "require('./package.json').version")"
+            echo
+            echo "### npm publish output"
+            echo '```text'
+          } >> "$GITHUB_STEP_SUMMARY"
+
+          set +e
+          npm publish --access public --loglevel=notice 2>&1 | tee -a "$GITHUB_STEP_SUMMARY"
+          status=${PIPESTATUS[0]}
+          set -e
+
+          echo '```' >> "$GITHUB_STEP_SUMMARY"
+          exit "$status"
