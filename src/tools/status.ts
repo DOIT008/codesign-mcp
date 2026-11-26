@@ -4,6 +4,7 @@ import { objectSchema } from '../mcp/schema.js';
 import { config } from '../config.js';
 import { browserManager } from '../browser/manager.js';
 import { cacheStats } from '../codesign/cache.js';
+import { rateLimitStats } from '../utils/rate-limit.js';
 
 const inputSchema = objectSchema({});
 
@@ -42,6 +43,9 @@ export function registerStatusTool(server: McpServer): void {
           artifactsDir: config.artifactsDir,
           idleMs: config.idleMs,
           keepBrowser: config.keepBrowser,
+          retryMaxAttempts: config.retryMaxAttempts,
+          apiRps: config.apiRps,
+          cdnRps: config.cdnRps,
         },
         profile: {
           exists: profileExists,
@@ -49,6 +53,7 @@ export function registerStatusTool(server: McpServer): void {
         },
         browser,
         cache: cacheStats(),
+        rateLimit: rateLimitStats(),
         notes:
           'Runtime files default to <workspaceRoot>/.codesign-mcp and are created only when a tool needs local state or artifacts. Login state is persisted in profileDir. CoDesign design-to-code tasks should use list_artboards, get_artboard_spec, and download_slice instead of cropping preview screenshots.',
       };

@@ -185,6 +185,7 @@ export type SliceManifest = SliceManifestItem[];
 
 // 归一化后的标注输出（MCP 返回结构）
 export interface NormalizedSpec {
+  hierarchy: import('./selection.js').LayerHierarchyNode[];
   artboard: {
     objectId: string;
     name: string;

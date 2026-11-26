@@ -91,6 +91,12 @@ export const config = {
   navTimeoutMs: envInt('CODESIGN_NAV_TIMEOUT_MS', 30_000),
   apiTimeoutMs: envInt('CODESIGN_API_TIMEOUT_MS', 20_000),
   metaTimeoutMs: envInt('CODESIGN_META_TIMEOUT_MS', 30_000),
+  retryMaxAttempts: envInt('CODESIGN_RETRY_MAX_ATTEMPTS', 3),
+  retryBaseDelayMs: envInt('CODESIGN_RETRY_BASE_MS', 300),
+  retryMaxDelayMs: envInt('CODESIGN_RETRY_MAX_DELAY_MS', 8_000),
+  retryAfterMaxMs: envInt('CODESIGN_RETRY_AFTER_MAX_MS', 30_000),
+  apiRps: envInt('CODESIGN_API_RPS', 5),
+  cdnRps: envInt('CODESIGN_CDN_RPS', 10),
 } as const;
 
 export type Config = typeof config;

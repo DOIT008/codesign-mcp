@@ -1,4 +1,5 @@
 import { CodesignError } from './errors.js';
+import { buildSpecHierarchy } from './selection.js';
 import type {
   NormalizedSpec,
   PlatformSpec,
@@ -37,6 +38,7 @@ export function normalizeSpec(
   platformSpec?: PlatformSpec,
 ): NormalizedSpec {
   const normalized: NormalizedSpec = {
+    hierarchy: buildSpecHierarchy(spec.layers ?? [], spec.groups ?? [], spec.rect),
     artboard: {
       objectId: spec.object_id,
       name: spec.name,

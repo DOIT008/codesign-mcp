@@ -103,6 +103,10 @@ CODESIGN_IDLE_MS=600000
 CODESIGN_KEEP_BROWSER=1
 CODESIGN_CACHE_TTL_MS=60000
 CODESIGN_INTEGRITY_STRICT=0
+CODESIGN_RETRY_MAX_ATTEMPTS=3
+CODESIGN_RETRY_BASE_MS=300
+CODESIGN_API_RPS=5
+CODESIGN_CDN_RPS=10
 CODESIGN_LOG_LEVEL=info
 ```
 
@@ -112,7 +116,7 @@ CODESIGN_LOG_LEVEL=info
 - `codesign_login`: Open a visible Chromium window for CoDesign QR-code login.
 - `codesign_logout`: Clear the persisted profile.
 - `list_artboards`: Resolve a CoDesign sharing URL into designs and artboards.
-- `get_artboard_spec`: Fetch official CoDesign `meta_url` specs with layers, text, colors, CSS, groups, and slice metadata. With `layerObjectId`, `selectionScope` can be `layer`, `subtree`, or `region`; selected responses include flat layers/groups, a hierarchy tree, selection bounds, and relative coordinates. Optional `targetPlatform` accepts natural-language platform names such as `web`, `Android`, `安卓`, `iOS`, `微信小程序`, or `mini program` and returns platform-adjusted metadata. Optional `targetUnit`, `customScale`, `customWidth`, and `remBasePx` mirror CoDesign's platform settings.
+- `get_artboard_spec`: Fetch official CoDesign `meta_url` specs with layers, text, colors, CSS, groups, and slice metadata. Every response includes a `spec.hierarchy` tree built from `parent_id` and `layerIndex`; each node carries `rect` (artboard-absolute), `relativeRect` (relative to the artboard), and `relativeToParent` (relative to its direct parent) so a full-page layout can be mapped to DOM without rebuilding the tree yourself. With `layerObjectId`, `selectionScope` can be `layer`, `subtree`, or `region`; selected responses also include flat layers/groups, selection bounds, and relative coordinates. Optional `targetPlatform` accepts natural-language platform names such as `web`, `Android`, `安卓`, `iOS`, `微信小程序`, or `mini program` and returns platform-adjusted metadata. Optional `targetUnit`, `customScale`, `customWidth`, and `remBasePx` mirror CoDesign's platform settings.
 - `get_artboard_image`: Fetch preview or cover images for visual comparison.
 - `download_slice`: Download designer-exported slice assets from the official slice manifest.
 - `debug_collect_network`: Collect a redacted network summary for diagnosis.
@@ -121,9 +125,13 @@ CODESIGN_LOG_LEVEL=info
 
 Sharing details, meta JSON, and slice manifests are cached in memory for 60 seconds (`CODESIGN_CACHE_TTL_MS`, in milliseconds). Concurrent calls for the same resource share a single request. Set the variable to `0` to disable caching. The cache is process-local and is never written to disk.
 
-Successful tool results keep the complete payload in `structuredContent`. `content[0].text` contains only a short summary, so the same JSON is not counted twice in the model context. If your MCP client does not read `structuredContent`, pass `includeFullText: true` to any data tool (`list_artboards`, `get_artboard_spec`, `get_artboard_image`, `download_slice`) to receive the full JSON as text instead. `debug_collect_network` keeps full records in the text channel because those records are the diagnostic output itself.
+Successful tool results keep the complete payload in `structuredContent`. `content[0].text` contains only a short summary, so the same JSON is not counted twice in the model context. For `get_artboard_spec`, the text summary additionally includes a two-level `hierarchy` skeleton, artboard dimensions, layer/group/slice counts, and any integrity warnings, so clients that ignore `structuredContent` still receive the structural cues needed for design-to-code. If your MCP client does not read `structuredContent`, pass `includeFullText: true` to any data tool (`list_artboards`, `get_artboard_spec`, `get_artboard_image`, `download_slice`) to receive the full JSON as text instead. `debug_collect_network` keeps full records in the text channel because those records are the diagnostic output itself.
 
 All headless tools reuse one browser page, so the sharing page is opened only once per session instead of once per tool call. The headed login window uses an exclusive page and mode switches wait for in-flight calls to finish.
+
+## Rate limiting and retries
+
+Every outbound request (sharing API, meta JSON, slice downloads) passes through a token bucket and a retry wrapper. `CODESIGN_API_RPS` (default `5`) and `CODESIGN_CDN_RPS` (default `10`) are per-host budgets; set either to `0` to disable throttling for that group. Only transient statuses (`408`, `429`, `500`, `502`, `503`, `504`) and network errors are retried, up to `CODESIGN_RETRY_MAX_ATTEMPTS` (default `3`) with exponential backoff and jitter. A `Retry-After` header is honored and capped by `CODESIGN_RETRY_AFTER_MAX_MS` (default `30000`). Exhausted retries return `RATE_LIMITED` with an actionable suggestion instead of a misleading `SHARING_NOT_FOUND`. `codesign_status` exposes the live bucket statistics under `rateLimit`.
 
 ## Data integrity
 
@@ -322,6 +330,10 @@ CODESIGN_IDLE_MS=600000
 CODESIGN_KEEP_BROWSER=1
 CODESIGN_CACHE_TTL_MS=60000
 CODESIGN_INTEGRITY_STRICT=0
+CODESIGN_RETRY_MAX_ATTEMPTS=3
+CODESIGN_RETRY_BASE_MS=300
+CODESIGN_API_RPS=5
+CODESIGN_CDN_RPS=10
 CODESIGN_LOG_LEVEL=info
 ```
 
@@ -331,7 +343,7 @@ CODESIGN_LOG_LEVEL=info
 - `codesign_login`：打开可见 Chromium 窗口，用于扫码登录 CoDesign。
 - `codesign_logout`：清理持久化 profile。
 - `list_artboards`：把 CoDesign 分享链接解析为设计稿和画板列表。
-- `get_artboard_spec`：读取官方 CoDesign `meta_url` 标注数据，包括图层、文字、颜色、CSS、分组和切图元数据。传入 `layerObjectId` 后，`selectionScope` 可设为 `layer`、`subtree` 或 `region`；选区结果包含扁平图层/分组、层级树、选区边界和相对坐标。可选的 `targetPlatform` 支持 `web`、`Android`、`安卓`、`iOS`、`微信小程序`、`mini program` 等自然语言平台名称，并返回平台转换后的标注信息。`targetUnit`、`customScale`、`customWidth`、`remBasePx` 对应 CoDesign 的平台设置。
+- `get_artboard_spec`：读取官方 CoDesign `meta_url` 标注数据，包括图层、文字、颜色、CSS、分组和切图元数据。所有结果都包含按 `parent_id` 与 `layerIndex` 构建的 `spec.hierarchy` 层级树；每个节点带 `rect`（相对画板绝对坐标）、`relativeRect`（相对画板）和 `relativeToParent`（相对直接父节点），整页还原可直接映射为 DOM，无需自行拼树。传入 `layerObjectId` 后，`selectionScope` 可设为 `layer`、`subtree` 或 `region`；选区结果还包含扁平图层/分组、选区边界和相对坐标。可选的 `targetPlatform` 支持 `web`、`Android`、`安卓`、`iOS`、`微信小程序`、`mini program` 等自然语言平台名称，并返回平台转换后的标注信息。`targetUnit`、`customScale`、`customWidth`、`remBasePx` 对应 CoDesign 的平台设置。
 - `get_artboard_image`：获取预览图或封面图，主要用于视觉对比。
 - `download_slice`：从官方切图清单下载设计师导出的切图资源。
 - `debug_collect_network`：收集脱敏后的网络摘要，用于诊断。
@@ -340,9 +352,13 @@ CODESIGN_LOG_LEVEL=info
 
 分享详情、标注 JSON 和切图清单会在内存中缓存 60 秒（`CODESIGN_CACHE_TTL_MS`，单位毫秒），相同资源的并发调用会合并为一次请求。设为 `0` 可关闭缓存。缓存只存在于当前进程，不会写入磁盘。
 
-工具成功结果把完整数据放在 `structuredContent` 中，`content[0].text` 只返回简短摘要，避免同一份 JSON 在模型上下文里被计算两次。如果你的 MCP 客户端不读取 `structuredContent`，可以对任意数据工具（`list_artboards`、`get_artboard_spec`、`get_artboard_image`、`download_slice`）传 `includeFullText: true`，改为接收完整 JSON 文本。`debug_collect_network` 的诊断记录本身就是输出内容，因此仍在文本通道中保留完整记录。
+工具成功结果把完整数据放在 `structuredContent` 中，`content[0].text` 只返回简短摘要，避免同一份 JSON 在模型上下文里被计算两次。`get_artboard_spec` 的文本摘要还会带出两层 `hierarchy` 骨架、画板尺寸、图层/分组/切图数量以及完整性告警，因此不读取 `structuredContent` 的客户端也能拿到还原所需的结构信息。如果你的 MCP 客户端不读取 `structuredContent`，可以对任意数据工具（`list_artboards`、`get_artboard_spec`、`get_artboard_image`、`download_slice`）传 `includeFullText: true`，改为接收完整 JSON 文本。`debug_collect_network` 的诊断记录本身就是输出内容，因此仍在文本通道中保留完整记录。
 
 所有 headless 工具复用同一个浏览器页面，分享页在每个会话中只打开一次，而不是每次工具调用都打开。登录用的 headed 窗口使用独占页面，模式切换会等待正在进行的调用结束。
+
+## 限流与重试
+
+所有出站请求（分享接口、标注 JSON、切图下载）都会先经过令牌桶节流再进入重试包装。`CODESIGN_API_RPS`（默认 `5`）和 `CODESIGN_CDN_RPS`（默认 `10`）是按 host 分组的配额，设为 `0` 可关闭对应分组的节流。只有瞬时状态码（`408`、`429`、`500`、`502`、`503`、`504`）和网络错误会重试，最多 `CODESIGN_RETRY_MAX_ATTEMPTS` 次（默认 `3`），采用指数退避加抖动。`Retry-After` 响应头会被遵守，上限由 `CODESIGN_RETRY_AFTER_MAX_MS` 控制（默认 `30000` 毫秒）。重试耗尽后返回 `RATE_LIMITED` 和可操作建议，而不再误报为 `SHARING_NOT_FOUND`。`codesign_status` 会在 `rateLimit` 字段中暴露实时的桶统计。
 
 ## 数据完整性
 

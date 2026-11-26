@@ -14,7 +14,7 @@ import {
 import { CodesignError } from '../codesign/errors.js';
 import { parseSharingId } from '../utils/url.js';
 import { errorResult } from './artboards.js';
-import { toolSuccess } from '../mcp/result.js';
+import { toolSuccess, summarizeSpecPayload } from '../mcp/result.js';
 import { getLogger } from '../logger.js';
 import type { PlatformSpec, SharingScreen, SpecObject } from '../codesign/types.js';
 
@@ -255,7 +255,7 @@ export function registerSpecTool(server: McpServer): void {
                   conversion: platformSpec.conversion,
                 }
               : undefined,
-          }, includeFullText);
+          }, includeFullText, summarizeSpecPayload);
         }
 
         return toolSuccess({
@@ -264,7 +264,7 @@ export function registerSpecTool(server: McpServer): void {
           integrity: specIntegrity,
           supportedTargetPlatforms: supportedTargetPlatforms(),
           spec: normalized,
-        }, includeFullText);
+        }, includeFullText, summarizeSpecPayload);
       } catch (err) {
         log.warn({ err: errMsg(err), sharingId }, 'get_artboard_spec failed');
         return errorResult(err);

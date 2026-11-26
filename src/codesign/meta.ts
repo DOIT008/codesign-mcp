@@ -1,6 +1,8 @@
 import { config } from '../config.js';
 import { CodesignError } from './errors.js';
 import { assertAllowedRemoteUrl, normalizeCodesignAssetUrl } from '../utils/url.js';
+import { throttle } from '../utils/rate-limit.js';
+import { assertNotRateLimited, withRetry } from '../utils/retry.js';
 
 // CDN 资源在 HAR 中无 cookie 依赖，可直接 Node fetch。
 // 加一个 User-Agent 避免被 CDN 防火墙误判。
@@ -16,10 +18,19 @@ export async function fetchMetaJson<T = unknown>(url: string): Promise<T> {
   }
   const remoteUrl = normalizeCodesignAssetUrl(url);
   assertAllowedRemoteUrl(remoteUrl, 'meta');
-  const controller = new AbortController();
-  const timer = setTimeout(() => controller.abort(), config.metaTimeoutMs);
   try {
-    const resp = await fetch(remoteUrl, { headers: DEFAULT_HEADERS, signal: controller.signal });
+    const resp = await withRetry(async () => {
+      await throttle(remoteUrl);
+      const controller = new AbortController();
+      const timer = setTimeout(() => controller.abort(), config.metaTimeoutMs);
+      try {
+        const response = await fetch(remoteUrl, { headers: DEFAULT_HEADERS, signal: controller.signal });
+        assertNotRateLimited(response.status, 'meta request', response.headers.get('retry-after'));
+        return response;
+      } finally {
+        clearTimeout(timer);
+      }
+    });
     if (!resp.ok) {
       throw new CodesignError('META_FETCH_FAILED', `meta fetch failed: HTTP ${resp.status}`, {
         url: remoteUrl,
@@ -41,7 +52,5 @@ export async function fetchMetaJson<T = unknown>(url: string): Promise<T> {
     throw new CodesignError('META_FETCH_FAILED', `meta fetch threw: ${(err as Error).message}`, {
       url: remoteUrl,
     });
-  } finally {
-    clearTimeout(timer);
   }
 }

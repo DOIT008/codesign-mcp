@@ -5,6 +5,8 @@ import type { APIRequestContext } from 'playwright';
 import { CodesignError } from '../codesign/errors.js';
 import { config } from '../config.js';
 import { assertCodesignOriginUrl } from './url.js';
+import { throttle } from './rate-limit.js';
+import { assertNotRateLimited, withRetry } from './retry.js';
 
 export interface SameOriginRequest {
   url: string;
@@ -33,11 +35,17 @@ export async function requestJson<T = unknown>(
   }
 
   try {
-    const response = await request.fetch(req.url, {
-      method: req.method ?? 'GET',
-      headers,
-      data: req.body === undefined ? undefined : JSON.stringify(req.body),
-      timeout: config.apiTimeoutMs,
+    const response = await withRetry(async () => {
+      await throttle(req.url);
+      const resp = await request.fetch(req.url, {
+        method: req.method ?? 'GET',
+        headers,
+        data: req.body === undefined ? undefined : JSON.stringify(req.body),
+        timeout: config.apiTimeoutMs,
+      });
+      const responseHeaders = typeof resp.headers === 'function' ? resp.headers() : {};
+      assertNotRateLimited(resp.status(), 'same-origin request', responseHeaders['retry-after']);
+      return resp;
     });
     const rawText = await response.text();
     return {
@@ -46,6 +54,7 @@ export async function requestJson<T = unknown>(
       rawText,
     };
   } catch (err) {
+    if (err instanceof CodesignError) throw err;
     throw new CodesignError('SHARING_FETCH_FAILED', `same-origin request failed: ${(err as Error).message}`, {
       url: req.url,
     });

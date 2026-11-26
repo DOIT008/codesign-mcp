@@ -17,6 +17,7 @@ export interface LayerHierarchyNode {
   kind: 'layer' | 'group';
   rect: Rect;
   relativeRect: Rect;
+  relativeToParent?: Rect;
   children: LayerHierarchyNode[];
 }
 
@@ -76,6 +77,32 @@ export function buildLayerSelection(
     groups: selectedGroups,
     hierarchy,
   };
+}
+
+// 整页还原用的完整层级树：parent_id 指向画板本身（不在 layers/groups 中）的节点即为根。
+// 与 buildLayerSelection 复用同一套索引与排序逻辑，relativeRect 相对画板，
+// relativeToParent 相对直接父节点，便于直接映射成 CSS 定位。
+export function buildSpecHierarchy(
+  layers: SpecLayer[],
+  groups: SpecLayer[],
+  artboardRect: Rect,
+): LayerHierarchyNode[] {
+  const entries: IndexedLayer[] = [];
+  const seen = new Set<string>();
+  const append = (values: SpecLayer[], kind: IndexedLayer['kind']): void => {
+    for (const value of values) {
+      if (seen.has(value.object_id)) {
+        throw new CodesignError('META_SCHEMA_MISMATCH', 'duplicate layer object_id', {
+          objectId: value.object_id,
+        });
+      }
+      seen.add(value.object_id);
+      entries.push({ kind, sourceOrder: entries.length, value });
+    }
+  };
+  append(layers, 'layer');
+  append(groups, 'group');
+  return buildHierarchy(entries, artboardRect);
 }
 
 function indexLayers(spec: NormalizedSpec): IndexedLayer[] {
@@ -177,7 +204,11 @@ function buildHierarchy(entries: IndexedLayer[], bounds: Rect): LayerHierarchyNo
     .sort(compareEntries);
   const builtIds = new Set<string>();
 
-  const buildNode = (entry: IndexedLayer, ancestors: Set<string>): LayerHierarchyNode => {
+  const buildNode = (
+    entry: IndexedLayer,
+    ancestors: Set<string>,
+    parentRect: Rect,
+  ): LayerHierarchyNode => {
     const objectId = entry.value.object_id;
     if (ancestors.has(objectId)) {
       throw new CodesignError('META_SCHEMA_MISMATCH', 'selected layer hierarchy contains a cycle', {
@@ -195,13 +226,14 @@ function buildHierarchy(entries: IndexedLayer[], bounds: Rect): LayerHierarchyNo
       kind: entry.kind,
       rect: copyRect(entry.value.rect),
       relativeRect: relativeRect(entry.value.rect, bounds),
+      relativeToParent: relativeRect(entry.value.rect, parentRect),
       children: (childrenByParent.get(objectId) ?? []).map((child) =>
-        buildNode(child, nextAncestors),
+        buildNode(child, nextAncestors, entry.value.rect),
       ),
     };
   };
 
-  const hierarchy = roots.map((root) => buildNode(root, new Set()));
+  const hierarchy = roots.map((root) => buildNode(root, new Set(), bounds));
   if (builtIds.size !== entries.length) {
     throw new CodesignError('META_SCHEMA_MISMATCH', 'selected layer hierarchy has no valid root', {
       selectedCount: entries.length,

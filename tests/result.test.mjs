@@ -7,6 +7,7 @@ import {
   toolFailure,
   toolError,
   summarizePayload,
+  summarizeSpecPayload,
 } from '../dist/mcp/result.js';
 import { CodesignError } from '../dist/codesign/errors.js';
 
@@ -66,4 +67,56 @@ test('summarizePayload truncates long strings', () => {
 
   assert.ok(summary.length < 250);
   assert.match(summary, /\.\.\./);
+});
+
+test('summarizeSpecPayload includes artboard, hierarchy skeleton and layer counts', () => {
+  const payload = {
+    ok: true,
+    sharingId: '123',
+    integrity: { ok: true },
+    spec: {
+      artboard: { name: 'Home', width: 1920, height: 1080 },
+      hierarchy: [
+        {
+          name: 'Frame', type: 'group', rect: { width: 1920, height: 1080 },
+          children: [
+            {
+              name: 'Title', type: 'text', rect: { width: 240, height: 32 },
+              children: [{ name: 'Glyph', type: 'layer', rect: { width: 10, height: 10 }, children: [] }],
+            },
+          ],
+        },
+      ],
+      layers: Array.from({ length: 200 }, (_, index) => ({ object_id: `layer-${index}` })),
+      groups: [1, 2, 3],
+      slices: [],
+    },
+  };
+
+  const summary = summarizeSpecPayload(payload);
+  assert.match(summary, /artboard: Home \(1920x1080\)/);
+  assert.match(summary, /- Frame \[group\] 1920x1080/);
+  assert.match(summary, /  - Title \[text\] 240x32/);
+  assert.equal(summary.includes('Glyph'), false);
+  assert.match(summary, /layers: 200, groups: 3, slices: 0/);
+  assert.match(summary, /integrity: ok/);
+  assert.equal(summary.includes('layer-'), false);
+  assert.ok(summary.length < 700);
+});
+
+test('summarizeSpecPayload surfaces integrity warnings in text channel', () => {
+  const summary = summarizeSpecPayload({
+    ok: true,
+    integrity: { ok: false, warnings: ['orphan parent_id: node-x', 'slices count differs'] },
+    spec: { artboard: { name: 'A', width: 10, height: 10 }, hierarchy: [], layers: [], groups: [], slices: [] },
+  });
+  assert.match(summary, /integrity: warnings=2 \(orphan parent_id: node-x; slices count differs\)/);
+});
+
+test('toolSuccess accepts a custom summarizer and includeFullText still wins', () => {
+  const payload = { spec: { layers: [] } };
+  const custom = () => 'custom summary';
+
+  assert.equal(toolSuccess(payload, false, custom).content[0].text, 'custom summary');
+  assert.equal(toolSuccess(payload, true, custom).content[0].text, JSON.stringify({ ok: true, ...payload }));
 });

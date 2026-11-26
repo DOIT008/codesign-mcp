@@ -5,6 +5,8 @@ import type { APIRequestContext } from 'playwright';
 import { config } from '../config.js';
 import { CodesignError } from '../codesign/errors.js';
 import { assertAllowedRemoteUrl, normalizeCodesignAssetUrl } from './url.js';
+import { throttle } from './rate-limit.js';
+import { assertNotRateLimited, withRetry } from './retry.js';
 
 const DEFAULT_HEADERS: Record<string, string> = {
   'User-Agent':
@@ -79,13 +81,25 @@ export async function downloadToArtifact(
     };
   }
 
-  const controller = new AbortController();
-  const timer = setTimeout(() => controller.abort(), config.metaTimeoutMs);
   try {
     const headers = { ...DEFAULT_HEADERS, ...options.headers };
-    const resp = options.request
-      ? await fetchWithBrowserContext(options.request, remoteUrl, headers)
-      : await fetchWithNode(remoteUrl, headers, controller.signal);
+    const resp = await withRetry(async () => {
+      await throttle(remoteUrl);
+      if (options.request) {
+        const result = await fetchWithBrowserContext(options.request, remoteUrl, headers);
+        assertNotRateLimited(result.status, 'artifact download', result.retryAfter);
+        return result;
+      }
+      const controller = new AbortController();
+      const timer = setTimeout(() => controller.abort(), config.metaTimeoutMs);
+      try {
+        const result = await fetchWithNode(remoteUrl, headers, controller.signal);
+        assertNotRateLimited(result.status, 'artifact download', result.retryAfter);
+        return result;
+      } finally {
+        clearTimeout(timer);
+      }
+    });
     if (!resp.ok || resp.status !== 200) {
       throw new CodesignError(errorCode, `download failed: HTTP ${resp.status}`, {
         url: remoteUrl,
@@ -133,8 +147,6 @@ export async function downloadToArtifact(
       url: remoteUrl,
       path: finalPath,
     });
-  } finally {
-    clearTimeout(timer);
   }
 }
 
@@ -204,6 +216,7 @@ interface FetchResult {
   mime: string | null;
   contentLength: string | null;
   contentEncoding: string | null;
+  retryAfter: string | null;
 }
 
 async function fetchWithNode(
@@ -219,6 +232,7 @@ async function fetchWithNode(
     mime: resp.headers.get('content-type'),
     contentLength: resp.headers.get('content-length'),
     contentEncoding: resp.headers.get('content-encoding'),
+    retryAfter: resp.headers.get('retry-after'),
   };
 }
 
@@ -236,6 +250,7 @@ async function fetchWithBrowserContext(
     mime: responseHeaders['content-type'] ?? null,
     contentLength: responseHeaders['content-length'] ?? null,
     contentEncoding: responseHeaders['content-encoding'] ?? null,
+    retryAfter: responseHeaders['retry-after'] ?? null,
   };
 }
 
