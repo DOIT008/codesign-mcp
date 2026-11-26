@@ -215,6 +215,21 @@ function collectHotspots(
   return cells.slice(0, maxHotspots);
 }
 
+// 多画板防错配：核对实际解析到的画板是否等于调用方声明的期望画板。
+// 返回 null 表示通过，返回字符串表示不匹配的原因（供工具层构造错误）。
+export function screenExpectationMismatch(
+  resolved: { id: number | string; name: string },
+  expected: { expectedScreenId?: number | string; expectedScreenName?: string },
+): 'id' | 'name' | null {
+  if (expected.expectedScreenId != null && String(resolved.id) !== String(expected.expectedScreenId)) {
+    return 'id';
+  }
+  if (expected.expectedScreenName != null && resolved.name !== expected.expectedScreenName) {
+    return 'name';
+  }
+  return null;
+}
+
 export function scoreVerdict(score: number): 'high' | 'medium' | 'low' {
   if (score >= 0.95) return 'high';
   if (score >= 0.85) return 'medium';

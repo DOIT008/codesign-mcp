@@ -7,6 +7,7 @@ import {
   resizeRgba,
   compareImages,
   scoreVerdict,
+  screenExpectationMismatch,
 } from '../dist/codesign/visual-diff.js';
 import { summarizeVisualDiffPayload } from '../dist/mcp/result.js';
 
@@ -100,6 +101,21 @@ test('scoreVerdict maps thresholds', () => {
   assert.equal(scoreVerdict(0.97), 'high');
   assert.equal(scoreVerdict(0.9), 'medium');
   assert.equal(scoreVerdict(0.7), 'low');
+});
+
+test('screen expectation guard passes when id/name match or are absent', () => {
+  const resolved = { id: 8801, name: '首页' };
+  assert.equal(screenExpectationMismatch(resolved, {}), null);
+  assert.equal(screenExpectationMismatch(resolved, { expectedScreenId: 8801 }), null);
+  assert.equal(screenExpectationMismatch(resolved, { expectedScreenId: '8801' }), null);
+  assert.equal(screenExpectationMismatch(resolved, { expectedScreenName: '首页' }), null);
+  assert.equal(screenExpectationMismatch(resolved, { expectedScreenId: 8801, expectedScreenName: '首页' }), null);
+});
+
+test('screen expectation guard detects wrong artboard (multi-artboard mismatch)', () => {
+  const resolved = { id: 8801, name: '首页' };
+  assert.equal(screenExpectationMismatch(resolved, { expectedScreenId: 8802 }), 'id');
+  assert.equal(screenExpectationMismatch(resolved, { expectedScreenName: '详情页' }), 'name');
 });
 
 test('summary shows score, verdict and hotspot preview', () => {

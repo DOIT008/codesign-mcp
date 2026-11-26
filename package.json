@@ -1,6 +1,6 @@
 {
   "name": "codesign-mcp-next",
-  "version": "0.3.5",
+  "version": "0.3.6",
   "description": "Local MCP server for Tencent CoDesign — read sharing artboards, specs, screenshots and slices.",
   "type": "module",
   "license": "MIT",

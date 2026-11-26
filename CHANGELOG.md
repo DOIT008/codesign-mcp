@@ -1,5 +1,16 @@
 # Changelog
 
+## 0.3.6 - 2026-11-26
+
+### Added
+
+- Added `expectedScreenId` and `expectedScreenName` guards to `visual_diff` and `verify_rendering`. In multi-artboard sharing links they assert the resolved artboard is the intended one and return `SCREEN_NOT_FOUND` with the available screens on mismatch, preventing a page from being compared or verified against the wrong artboard baseline.
+- Both tools now echo the exact artboard used (id, name, width, height; visual_diff also the preview URL and bytes) so callers can confirm the `screenId` matches the page URL. The visual_diff text summary also includes the artboard identity.
+
+### Changed
+
+- README and the design-to-code skill (v1.9) now document multi-artboard workflows: select multiple screen ids, keep a screenId-to-page mapping, run each artboard through the full pipeline independently, keep per-artboard score baselines, and assert artboard identity on every call.
+
 ## 0.3.5 - 2026-11-26
 
 ### Added

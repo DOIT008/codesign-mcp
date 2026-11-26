@@ -165,6 +165,10 @@ export function summarizeVerifyPayload(payload: Record<string, unknown>): string
 
 export function summarizeVisualDiffPayload(payload: Record<string, unknown>): string {
   const lines: string[] = ['visual_diff:'];
+  const screen = payload.screen as { id?: number; name?: string; width?: number; height?: number } | undefined;
+  if (screen) {
+    lines.push(`screen: ${String(screen.id ?? '?')} ${String(screen.name ?? '')} (${String(screen.width ?? '?')}x${String(screen.height ?? '?')})`);
+  }
   const score = typeof payload.score === 'number' ? payload.score.toFixed(4) : String(payload.score ?? '?');
   lines.push(`score: ${score} (verdict ${String(payload.verdict ?? '?')})`);
   lines.push(`diff pixels: ${String(payload.diffPixels ?? '?')} / ${String(payload.totalPixels ?? '?')}`);

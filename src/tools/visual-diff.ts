@@ -19,6 +19,7 @@ import {
   decodePng,
   compareImages,
   scoreVerdict,
+  screenExpectationMismatch,
   VISUAL_DIFF_CAVEATS,
 } from '../codesign/visual-diff.js';
 import { getLogger } from '../logger.js';
@@ -34,6 +35,8 @@ interface VisualDiffInput {
   screenId?: number | string;
   objectId?: string;
   screenName?: string;
+  expectedScreenId?: number | string;
+  expectedScreenName?: string;
   pageUrl?: string;
   screenshotPath?: string;
   viewportWidth?: number;
@@ -52,6 +55,14 @@ const inputSchema = objectSchema(
     screenId: { anyOf: [{ type: 'integer' }, { type: 'string' }] },
     objectId: { type: 'string' },
     screenName: { type: 'string' },
+    expectedScreenId: {
+      anyOf: [{ type: 'integer' }, { type: 'string' }],
+      description: 'Assert the resolved screen id matches this value. Use in multi-artboard workflows to prevent comparing a page against the wrong artboard.',
+    },
+    expectedScreenName: {
+      type: 'string',
+      description: 'Assert the resolved screen name matches this value exactly (multi-artboard guard).',
+    },
     pageUrl: {
       type: 'string',
       description: 'Local dev server URL to screenshot, e.g. http://127.0.0.1:5173/page. Mutually exclusive with screenshotPath.',
@@ -91,6 +102,7 @@ export function registerVisualDiffTool(server: McpServer): void {
     async (args: VisualDiffInput) => {
       const {
         sharingUrl, password, screenId, objectId, screenName,
+        expectedScreenId, expectedScreenName,
         pageUrl, screenshotPath, viewportWidth, viewportHeight,
         waitMs, threshold, maxAspectRatioDrift, includeDiffImage, includeFullText,
       } = args;
@@ -147,6 +159,22 @@ export function registerVisualDiffTool(server: McpServer): void {
               : new CodesignError('SCREEN_SELECTOR_REQUIRED', 'multiple screens present; specify a selector', {
                   available: summarizeScreens(allScreens),
                 }),
+          );
+        }
+
+        // 多画板防错配：断言实际解析到的画板与调用方期望一致，避免拿 A 画板基准比 B 页面。
+        const mismatch = screenExpectationMismatch(
+          { id: picked.id, name: picked.name },
+          { expectedScreenId, expectedScreenName },
+        );
+        if (mismatch) {
+          return errorResult(
+            new CodesignError('SCREEN_NOT_FOUND', `resolved screen does not match expectedScreen${mismatch}`, {
+              expectedScreenId,
+              expectedScreenName,
+              resolved: { id: picked.id, name: picked.name },
+              available: summarizeScreens(allScreens),
+            }),
           );
         }
 
@@ -215,7 +243,16 @@ export function registerVisualDiffTool(server: McpServer): void {
 
         return toolSuccess({
           sharingId,
-          screen: { id: picked.id, objectId: picked.object_id, name: picked.name },
+          // 显式回显本次差分实际使用的画板身份、尺寸与基准图，供多画板流程核对 screenId <-> pageUrl。
+          screen: {
+            id: picked.id,
+            objectId: picked.object_id,
+            name: picked.name,
+            width: picked.width,
+            height: picked.height,
+            previewUrl: designUrl,
+            previewBytes: designDownload.bytes,
+          },
           renderSource,
           score: report.score,
           verdict: scoreVerdict(report.score),

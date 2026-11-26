@@ -11,6 +11,7 @@ import { getCachedSharingDetail, fetchCachedSpec, fetchCachedSliceManifest } fro
 import { normalizeSpec } from '../codesign/parser.js';
 import { buildPlatformSpec } from '../codesign/platform.js';
 import { verifyRendering, VERIFY_CHECKS, type CodeFile, type VerifyCheck } from '../codesign/verify.js';
+import { screenExpectationMismatch } from '../codesign/visual-diff.js';
 import { CodesignError } from '../codesign/errors.js';
 import { parseSharingId } from '../utils/url.js';
 import { config } from '../config.js';
@@ -29,6 +30,8 @@ interface VerifyInput {
   screenId?: number | string;
   objectId?: string;
   screenName?: string;
+  expectedScreenId?: number | string;
+  expectedScreenName?: string;
   codeFiles: string[];
   targetPlatform: string;
   targetUnit?: string;
@@ -47,6 +50,14 @@ const inputSchema = objectSchema(
     screenId: { anyOf: [{ type: 'integer' }, { type: 'string' }] },
     objectId: { type: 'string' },
     screenName: { type: 'string' },
+    expectedScreenId: {
+      anyOf: [{ type: 'integer' }, { type: 'string' }],
+      description: 'Assert the resolved screen id matches this value (multi-artboard guard).',
+    },
+    expectedScreenName: {
+      type: 'string',
+      description: 'Assert the resolved screen name matches this value exactly (multi-artboard guard).',
+    },
     codeFiles: {
       type: 'array',
       items: { type: 'string', minLength: 1 },
@@ -88,7 +99,8 @@ export function registerVerifyRenderingTool(server: McpServer): void {
     },
     async (args: VerifyInput) => {
       const {
-        sharingUrl, password, screenId, objectId, screenName, codeFiles,
+        sharingUrl, password, screenId, objectId, screenName,
+        expectedScreenId, expectedScreenName, codeFiles,
         targetPlatform, targetUnit, customScale, customWidth, remBasePx,
         scale, checks, includeFullText,
       } = args;
@@ -134,6 +146,22 @@ export function registerVerifyRenderingTool(server: McpServer): void {
           );
         }
 
+        // 多画板防错配：断言实际解析到的画板与调用方期望一致。
+        const mismatch = screenExpectationMismatch(
+          { id: picked.id, name: picked.name },
+          { expectedScreenId, expectedScreenName },
+        );
+        if (mismatch) {
+          return errorResult(
+            new CodesignError('SCREEN_NOT_FOUND', `resolved screen does not match expectedScreen${mismatch}`, {
+              expectedScreenId,
+              expectedScreenName,
+              resolved: { id: picked.id, name: picked.name },
+              available: summarizeScreens(allScreens),
+            }),
+          );
+        }
+
         const spec = await fetchCachedSpec(picked.meta_url);
         const manifest = picked.slices_url ? await fetchCachedSliceManifest(picked.slices_url) : [];
         const platformSpec = buildPlatformSpec(spec, targetPlatform, {
@@ -157,7 +185,13 @@ export function registerVerifyRenderingTool(server: McpServer): void {
 
         return toolSuccess({
           sharingId,
-          screen: { id: picked.id, objectId: picked.object_id, name: picked.name },
+          screen: {
+            id: picked.id,
+            objectId: picked.object_id,
+            name: picked.name,
+            width: picked.width,
+            height: picked.height,
+          },
           platform: {
             requested: platformSpec.requested,
             id: platformSpec.id,
