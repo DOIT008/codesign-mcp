@@ -1,11 +1,12 @@
 import type { McpServer } from '../mcp/server.js';
 import { objectSchema } from '../mcp/schema.js';
 import { browserManager } from '../browser/manager.js';
-import { getSharingDetail } from '../codesign/sharing.js';
+import { getCachedSharingDetail } from '../codesign/cache.js';
 import { CodesignError } from '../codesign/errors.js';
 import { parseSharingId } from '../utils/url.js';
 import { downloadToArtifact } from '../utils/download.js';
 import { errorResult } from './artboards.js';
+import { toolSuccess } from '../mcp/result.js';
 import { pickScreen, summarizeScreens } from './spec.js';
 import { getLogger } from '../logger.js';
 import type { SharingScreen } from '../codesign/types.js';
@@ -20,6 +21,7 @@ interface ImageInput {
   screenName?: string;
   variant: 'full' | 'cover';
   download: boolean;
+  includeFullText?: boolean;
 }
 
 const inputSchema = objectSchema(
@@ -31,6 +33,12 @@ const inputSchema = objectSchema(
     screenName: { type: 'string' },
     variant: { type: 'string', enum: ['full', 'cover'], default: 'full' },
     download: { type: 'boolean', default: false },
+    includeFullText: {
+      type: 'boolean',
+      default: false,
+      description:
+        'Set true only if your client cannot read structuredContent. Then content[0].text carries the full JSON instead of a short summary.',
+    },
   },
   ['sharingUrl'],
 );
@@ -47,7 +55,7 @@ export function registerImageTool(server: McpServer): void {
       inputSchema,
     },
     async (args: ImageInput) => {
-      const { sharingUrl, password, screenId, objectId, screenName, variant, download } = args;
+      const { sharingUrl, password, screenId, objectId, screenName, variant, download, includeFullText } = args;
       let sharingId: string;
       try {
         sharingId = parseSharingId(sharingUrl);
@@ -57,7 +65,7 @@ export function registerImageTool(server: McpServer): void {
 
       const call = await browserManager.acquireHeadless();
       try {
-        const { detail } = await getSharingDetail(call.page, sharingId, password);
+        const { detail } = await getCachedSharingDetail(call.page, sharingId, password);
 
         const allScreens: SharingScreen[] = [];
         for (const d of detail.designs ?? []) {
@@ -134,7 +142,7 @@ export function registerImageTool(server: McpServer): void {
           }
         }
 
-        return ok(result);
+        return toolSuccess(result, includeFullText);
       } catch (err) {
         log.warn({ err: errMsg(err), sharingId }, 'get_artboard_image failed');
         return errorResult(err);
@@ -159,14 +167,6 @@ function guessExt(url: string, mime?: string): string {
     /* ignore */
   }
   return '.png';
-}
-
-function ok(payload: Record<string, unknown>) {
-  const structuredContent = { ok: true, ...payload };
-  return {
-    structuredContent,
-    content: [{ type: 'text' as const, text: JSON.stringify(structuredContent, null, 2) }],
-  };
 }
 
 function errMsg(err: unknown): string {

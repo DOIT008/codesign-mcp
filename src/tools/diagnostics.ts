@@ -6,6 +6,7 @@ import { getSharingDetail } from '../codesign/sharing.js';
 import { parseSharingId } from '../utils/url.js';
 import { redactUrl, redactHeaderValue, topLevelKeys, isSensitiveHeader } from '../utils/redact.js';
 import { errorResult } from './artboards.js';
+import { toolSuccessFull } from '../mcp/result.js';
 import { getLogger } from '../logger.js';
 import { config } from '../config.js';
 
@@ -176,8 +177,8 @@ export function registerDiagnosticsTool(server: McpServer): void {
 
         const summary = summarizeRecords(finishedResponses);
 
-        return ok({
-          sharingId: 'SHARING_ID',
+        return toolSuccessFull({
+          sharingId,
           timeoutMs,
           recordedCount: finishedResponses.length,
           inFlightAtEnd: records.size,
@@ -223,14 +224,6 @@ function summarizeRecords(records: NetworkRecord[]): {
     records,
     byHost: Array.from(hostMap.entries()).map(([host, count]) => ({ host, count })),
     byStatus: Array.from(statusMap.entries()).map(([status, count]) => ({ status, count })),
-  };
-}
-
-function ok(payload: Record<string, unknown>) {
-  const structuredContent = { ok: true, ...payload };
-  return {
-    structuredContent,
-    content: [{ type: 'text' as const, text: JSON.stringify(structuredContent, null, 2) }],
   };
 }
 

@@ -1,9 +1,7 @@
 import type { McpServer } from '../mcp/server.js';
 import { objectSchema } from '../mcp/schema.js';
 import { browserManager } from '../browser/manager.js';
-import { getSharingDetail } from '../codesign/sharing.js';
-import { fetchMetaJson } from '../codesign/meta.js';
-import { fetchSliceManifest } from '../codesign/slices.js';
+import { getCachedSharingDetail, fetchCachedMetaJson, fetchCachedSliceManifest } from '../codesign/cache.js';
 import { assertSpecObject, normalizeSpec, findLayerByObjectId } from '../codesign/parser.js';
 import { buildPlatformSpec, supportedTargetPlatforms } from '../codesign/platform.js';
 import {
@@ -15,6 +13,7 @@ import {
 import { CodesignError } from '../codesign/errors.js';
 import { parseSharingId } from '../utils/url.js';
 import { errorResult } from './artboards.js';
+import { toolSuccess } from '../mcp/result.js';
 import { getLogger } from '../logger.js';
 import type { PlatformSpec, SharingScreen, SpecObject } from '../codesign/types.js';
 
@@ -34,6 +33,7 @@ interface SpecInput {
   customWidth?: number;
   remBasePx?: number;
   includeSlices: boolean;
+  includeFullText?: boolean;
 }
 
 const inputSchema = objectSchema(
@@ -83,6 +83,12 @@ const inputSchema = objectSchema(
         'Optional px-per-rem divisor used only when targetUnit is rem. Defaults to 16 and is returned in platformSpec.conversion.',
     },
     includeSlices: { type: 'boolean', default: true },
+    includeFullText: {
+      type: 'boolean',
+      default: false,
+      description:
+        'Set true only if your client cannot read structuredContent. Then content[0].text carries the full JSON instead of a short summary.',
+    },
   },
   ['sharingUrl'],
 );
@@ -118,6 +124,7 @@ export function registerSpecTool(server: McpServer): void {
         customWidth,
         remBasePx,
         includeSlices,
+        includeFullText,
       } = args;
       let sharingId: string;
       try {
@@ -138,7 +145,7 @@ export function registerSpecTool(server: McpServer): void {
 
       const call = await browserManager.acquireHeadless();
       try {
-        const { detail } = await getSharingDetail(call.page, sharingId, password);
+        const { detail } = await getCachedSharingDetail(call.page, sharingId, password);
 
         const allScreens: SharingScreen[] = [];
         for (const d of detail.designs ?? []) {
@@ -178,7 +185,7 @@ export function registerSpecTool(server: McpServer): void {
         }
 
         // 拉 meta JSON
-        const specRaw = await fetchMetaJson<unknown>(picked.meta_url);
+        const specRaw = await fetchCachedMetaJson<unknown>(picked.meta_url);
         try {
           assertSpecObject(specRaw);
         } catch (err) {
@@ -189,7 +196,7 @@ export function registerSpecTool(server: McpServer): void {
 
         let slices = undefined;
         if (includeSlices && picked.slices_url) {
-          slices = await fetchSliceManifest(picked.slices_url);
+          slices = await fetchCachedSliceManifest(picked.slices_url);
         }
 
         const hasPlatformOptions =
@@ -225,7 +232,7 @@ export function registerSpecTool(server: McpServer): void {
               }),
             );
           }
-          return ok({
+          return toolSuccess({
             sharingId,
             screen: { id: picked.id, objectId: picked.object_id, name: picked.name },
             layer,
@@ -246,15 +253,15 @@ export function registerSpecTool(server: McpServer): void {
                   conversion: platformSpec.conversion,
                 }
               : undefined,
-          });
+          }, includeFullText);
         }
 
-        return ok({
+        return toolSuccess({
           sharingId,
           screen: { id: picked.id, objectId: picked.object_id, name: picked.name },
           supportedTargetPlatforms: supportedTargetPlatforms(),
           spec: normalized,
-        });
+        }, includeFullText);
       } catch (err) {
         log.warn({ err: errMsg(err), sharingId }, 'get_artboard_spec failed');
         return errorResult(err);
@@ -302,14 +309,6 @@ export function summarizeScreens(
     width: s.width,
     height: s.height,
   }));
-}
-
-function ok(payload: Record<string, unknown>) {
-  const structuredContent = { ok: true, ...payload };
-  return {
-    structuredContent,
-    content: [{ type: 'text' as const, text: JSON.stringify(structuredContent, null, 2) }],
-  };
 }
 
 function errMsg(err: unknown): string {

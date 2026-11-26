@@ -84,6 +84,7 @@ export const config = {
   logLevel: envLogLevel('CODESIGN_LOG_LEVEL', 'info'),
   idleMs: envInt('CODESIGN_IDLE_MS', 10 * 60 * 1000),
   keepBrowser: envBool('CODESIGN_KEEP_BROWSER', false),
+  cacheTtlMs: envInt('CODESIGN_CACHE_TTL_MS', 60_000),
   origin: 'https://codesign.qq.com',
   homePath: '/app/design',
   navTimeoutMs: envInt('CODESIGN_NAV_TIMEOUT_MS', 30_000),

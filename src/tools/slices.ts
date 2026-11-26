@@ -1,13 +1,14 @@
 import type { McpServer } from '../mcp/server.js';
 import { objectSchema } from '../mcp/schema.js';
 import { browserManager } from '../browser/manager.js';
-import { getSharingDetail } from '../codesign/sharing.js';
-import { fetchSliceManifest, findSliceByObjectId } from '../codesign/slices.js';
+import { getCachedSharingDetail, fetchCachedSliceManifest } from '../codesign/cache.js';
+import { findSliceByObjectId } from '../codesign/slices.js';
 import { CodesignError } from '../codesign/errors.js';
 import { normalizeCodesignAssetUrl, parseSharingId } from '../utils/url.js';
 import { downloadToArtifact } from '../utils/download.js';
 import { encodeFilenameComponent } from '../utils/filename.js';
 import { errorResult } from './artboards.js';
+import { toolSuccess } from '../mcp/result.js';
 import { pickScreen, summarizeScreens } from './spec.js';
 import { getLogger } from '../logger.js';
 import type { SharingScreen, SliceExportable } from '../codesign/types.js';
@@ -28,6 +29,7 @@ interface SlicesInput {
   layerObjectId: string;
   format?: string;
   scales?: number[];
+  includeFullText?: boolean;
 }
 
 const inputSchema = objectSchema(
@@ -51,6 +53,12 @@ const inputSchema = objectSchema(
       items: { type: 'number' },
       description: 'Filter exportables by scale list, e.g. [1, 2]',
     },
+    includeFullText: {
+      type: 'boolean',
+      default: false,
+      description:
+        'Set true only if your client cannot read structuredContent. Then content[0].text carries the full JSON instead of a short summary.',
+    },
   },
   ['sharingUrl', 'layerObjectId'],
 );
@@ -68,7 +76,7 @@ export function registerSlicesTool(server: McpServer): void {
       annotations: { readOnlyHint: false, destructiveHint: false, idempotentHint: true, openWorldHint: true },
     },
     async (args: SlicesInput) => {
-      const { sharingUrl, password, screenId, objectId, screenName, layerObjectId, format, scales } = args;
+      const { sharingUrl, password, screenId, objectId, screenName, layerObjectId, format, scales, includeFullText } = args;
       let sharingId: string;
       try {
         sharingId = parseSharingId(sharingUrl);
@@ -78,7 +86,7 @@ export function registerSlicesTool(server: McpServer): void {
 
       const call = await browserManager.acquireHeadless();
       try {
-        const { detail } = await getSharingDetail(call.page, sharingId, password);
+        const { detail } = await getCachedSharingDetail(call.page, sharingId, password);
 
         const allScreens: SharingScreen[] = [];
         for (const d of detail.designs ?? []) {
@@ -118,7 +126,7 @@ export function registerSlicesTool(server: McpServer): void {
           );
         }
 
-        const manifest = await fetchSliceManifest(picked.slices_url);
+        const manifest = await fetchCachedSliceManifest(picked.slices_url);
         const slice = findSliceByObjectId(manifest, layerObjectId);
         if (!slice) {
           return errorResult(
@@ -194,7 +202,7 @@ export function registerSlicesTool(server: McpServer): void {
           );
         }
 
-        return ok({
+        return toolSuccess({
           sharingId,
           screen: { id: picked.id, objectId: picked.object_id, name: picked.name },
           slice: {
@@ -203,7 +211,7 @@ export function registerSlicesTool(server: McpServer): void {
             rect: slice.rect,
           },
           downloads,
-        });
+        }, includeFullText);
       } catch (err) {
         log.warn({ err: errMsg(err), sharingId }, 'download_slice failed');
         return errorResult(err);
@@ -236,14 +244,6 @@ function extFromMime(mime?: string): string | undefined {
   if (mime.includes('webp')) return 'webp';
   if (mime.includes('svg')) return 'svg';
   return undefined;
-}
-
-function ok(payload: Record<string, unknown>) {
-  const structuredContent = { ok: true, ...payload };
-  return {
-    structuredContent,
-    content: [{ type: 'text' as const, text: JSON.stringify(structuredContent, null, 2) }],
-  };
 }
 
 function errMsg(err: unknown): string {

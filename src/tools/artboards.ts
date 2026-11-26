@@ -1,16 +1,17 @@
 import type { McpServer } from '../mcp/server.js';
 import { objectSchema } from '../mcp/schema.js';
 import { browserManager } from '../browser/manager.js';
-import { getSharingDetail } from '../codesign/sharing.js';
-import { CodesignError, isCodesignError } from '../codesign/errors.js';
+import { getCachedSharingDetail } from '../codesign/cache.js';
 import { parseSharingId } from '../utils/url.js';
 import { getLogger } from '../logger.js';
+import { toolSuccess, toolError as buildErrorResult } from '../mcp/result.js';
 
 const log = getLogger();
 
 interface ArtboardsInput {
   sharingUrl: string;
   password?: string;
+  includeFullText?: boolean;
 }
 
 const inputSchema = objectSchema(
@@ -23,6 +24,12 @@ const inputSchema = objectSchema(
     password: {
       type: 'string',
       description: 'Sharing password if required',
+    },
+    includeFullText: {
+      type: 'boolean',
+      default: false,
+      description:
+        'Set true only if your client cannot read structuredContent. Then content[0].text carries the full JSON instead of a short summary.',
     },
   },
   ['sharingUrl'],
@@ -40,7 +47,7 @@ export function registerArtboardsTool(server: McpServer): void {
       inputSchema,
       annotations: { readOnlyHint: true, destructiveHint: false, idempotentHint: true, openWorldHint: true },
     },
-    async ({ sharingUrl, password }: ArtboardsInput) => {
+    async ({ sharingUrl, password, includeFullText }: ArtboardsInput) => {
       let sharingId: string;
       try {
         sharingId = parseSharingId(sharingUrl);
@@ -50,7 +57,7 @@ export function registerArtboardsTool(server: McpServer): void {
 
       const call = await browserManager.acquireHeadless();
       try {
-        const { detail, stateKey } = await getSharingDetail(call.page, sharingId, password);
+        const { detail, stateKey } = await getCachedSharingDetail(call.page, sharingId, password);
         const designs = (detail.designs ?? []).map((d) => ({
           id: d.id,
           name: d.name,
@@ -76,14 +83,14 @@ export function registerArtboardsTool(server: McpServer): void {
           })),
         }));
         const totalScreens = designs.reduce((acc, d) => acc + d.screens.length, 0);
-        return successResult({
+        return toolSuccess({
           sharingId,
           title: detail.title,
           designCount: designs.length,
           screenCount: totalScreens,
           designs,
           stateKey: stateKey ? '<acquired>' : null,
-        });
+        }, includeFullText);
       } catch (err) {
         log.warn({ err: errMsg(err), sharingId }, 'list_artboards failed');
         return errorResult(err);
@@ -94,35 +101,12 @@ export function registerArtboardsTool(server: McpServer): void {
   );
 }
 
-function successResult(payload: Record<string, unknown>) {
-  const structuredContent = { ok: true, ...payload };
-  return {
-    structuredContent,
-    content: [{ type: 'text' as const, text: JSON.stringify(structuredContent, null, 2) }],
-  };
-}
-
+// Re-exported for sibling tools that still import errorResult from here.
 export function errorResult(err: unknown) {
-  if (isCodesignError(err)) {
-    const structuredContent = { ok: false, error: err.toJSON() };
-    return {
-      isError: true,
-      structuredContent,
-      content: [{ type: 'text' as const, text: JSON.stringify(structuredContent, null, 2) }],
-    };
-  }
-  const structuredContent = { ok: false, error: { code: 'INTERNAL', message: errMsg(err) } };
-  return {
-    isError: true,
-    structuredContent,
-    content: [{ type: 'text' as const, text: JSON.stringify(structuredContent, null, 2) }],
-  };
+  return buildErrorResult(err);
 }
 
 function errMsg(err: unknown): string {
   if (err instanceof Error) return err.message;
   return String(err);
 }
-
-// Re-export shared error mapper for sibling tools.
-export const _internalCodesignErrorTypeCheck: typeof CodesignError = CodesignError;

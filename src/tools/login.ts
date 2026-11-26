@@ -4,6 +4,7 @@ import type { McpServer } from '../mcp/server.js';
 import { objectSchema } from '../mcp/schema.js';
 import { config } from '../config.js';
 import { getLogger } from '../logger.js';
+import { toolSuccess, toolFailure } from '../mcp/result.js';
 import { browserManager } from '../browser/manager.js';
 import { probeLoggedIn, waitForLogin } from '../browser/session.js';
 import { CodesignError } from '../codesign/errors.js';
@@ -46,7 +47,7 @@ export function registerLoginTool(server: McpServer): void {
       try {
         const probe = await probeLoggedIn(headless.page);
         if (probe.loggedIn) {
-          return ok({
+          return toolSuccess({
             stage: 'already-logged-in',
             user: probe.user,
             profileDir: config.profileDir,
@@ -69,14 +70,14 @@ export function registerLoginTool(server: McpServer): void {
           pollMs: 2000,
         });
         if (!result.loggedIn) {
-          return fail({
+          return toolFailure({
             stage: 'timeout-or-cancelled',
             lastStatus: result.status,
             profileDir: config.profileDir,
             hint: 'Re-run codesign_login. The browser window will reopen.',
           });
         }
-        return ok({
+        return toolSuccess({
           stage: 'just-logged-in',
           user: result.user,
           profileDir: config.profileDir,
@@ -109,13 +110,13 @@ export function registerLoginTool(server: McpServer): void {
     },
     async ({ confirm }: LogoutInput) => {
       if (!confirm) {
-        return fail({ stage: 'no-confirm', profileDir: config.profileDir });
+        return toolFailure({ stage: 'no-confirm', profileDir: config.profileDir });
       }
       try {
         assertProfileDirCanBeCleared();
       } catch (err) {
         const error = err instanceof CodesignError ? err.toJSON() : { code: 'INTERNAL', message: errMsg(err) };
-        return fail({ stage: 'unsafe-profile-dir', profileDir: config.profileDir, error });
+        return toolFailure({ stage: 'unsafe-profile-dir', profileDir: config.profileDir, error });
       }
       await browserManager.shutdown('logout');
       const existed = existsSync(config.profileDir);
@@ -124,14 +125,14 @@ export function registerLoginTool(server: McpServer): void {
           rmSync(config.profileDir, { recursive: true, force: true });
         } catch (err) {
           log.warn({ err: (err as Error).message }, 'failed to remove profileDir');
-          return fail({
+          return toolFailure({
             stage: 'rm-failed',
             profileDir: config.profileDir,
             error: (err as Error).message,
           });
         }
       }
-      return ok({ stage: 'cleared', profileDir: config.profileDir, hadProfile: existed });
+      return toolSuccess({ stage: 'cleared', profileDir: config.profileDir, hadProfile: existed });
     },
   );
 }
@@ -149,23 +150,6 @@ export function assertProfileDirCanBeCleared(): void {
     profileDir,
     allowedProfileDirs,
   });
-}
-
-function ok(payload: Record<string, unknown>) {
-  const structuredContent = { ok: true, ...payload };
-  return {
-    structuredContent,
-    content: [{ type: 'text' as const, text: JSON.stringify(structuredContent, null, 2) }],
-  };
-}
-
-function fail(payload: Record<string, unknown>) {
-  const structuredContent = { ok: false, ...payload };
-  return {
-    isError: true,
-    structuredContent,
-    content: [{ type: 'text' as const, text: JSON.stringify(structuredContent, null, 2) }],
-  };
 }
 
 function isSamePath(left: string, right: string): boolean {
