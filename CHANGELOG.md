@@ -1,5 +1,21 @@
 # Changelog
 
+## 0.3.3 - 2026-11-26
+
+### Added
+
+- Added in-process TTL caching and in-flight request deduplication for sharing details, metadata, and slice manifests.
+- Added metadata and slice-download integrity checks, including hierarchy validation, artifact magic-byte checks, and SHA-256 reporting.
+- Added per-host request throttling and exponential-backoff retries for CoDesign API, metadata, and CDN downloads.
+- Added full artboard hierarchy in `spec.hierarchy` with parent-relative geometry, plus concise text summaries of structured tool results.
+
+### Changed
+
+- Renamed the npm package to `codesign-mcp-next`; the GitHub repository remains `DOIT008/codesign-mcp`.
+- Serialized browser launches and reused a shared headless page to avoid profile contention.
+- Updated the design-to-code skill workflow to consume `platformSpec` and `spec.hierarchy` instead of hardcoded conversions.
+- Hardened the GitHub Actions publishing workflow for npm Trusted Publishing.
+
 ## 0.3.2 - 2026-08-31
 
 ### Fixed

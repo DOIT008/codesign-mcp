@@ -224,7 +224,7 @@ Before first publish:
 
 1. Configure npm Trusted Publishing for this GitHub repository and `.github/workflows/publish.yml`.
 2. Enable 2FA on npm for account and publishing protection.
-3. Create and push a version tag matching `package.json`, for example `v0.3.2`, to trigger publication.
+3. Create and push a version tag matching `package.json`, for example `v0.3.3`, to trigger publication.
 
 ## License
 
@@ -451,7 +451,7 @@ node scripts/stdio-smoke.mjs
 
 1. 在 npm 上为这个 GitHub 仓库和 `.github/workflows/publish.yml` 配置 Trusted Publishing。
 2. 为 npm 账号开启 2FA。
-3. 创建并推送与 `package.json` 一致的版本标签，例如 `v0.3.2`，触发发布。
+3. 创建并推送与 `package.json` 一致的版本标签，例如 `v0.3.3`，触发发布。
 
 ## 许可证
 
