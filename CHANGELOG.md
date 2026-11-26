@@ -1,5 +1,17 @@
 # Changelog
 
+## 0.3.5 - 2026-11-26
+
+### Added
+
+- Added `visual_diff`, a pixel-level visual regression tool. Provide `pageUrl` (a local http dev server) or `screenshotPath`, plus the artboard selector. It downloads the artboard preview, aligns both images to the artboard viewport, and returns a 0..1 similarity score, verdict, diff pixels, difference hotspots, and a diff image path. Aspect-ratio drift beyond tolerance is reported as `VISUAL_DIFF_ALIGNMENT` rather than a misleading score. The score is a regression signal, not a pass/fail gate.
+- Added `acquireHeadlessIsolated()` to the browser manager so local dev-server screenshots use a dedicated page and never disturb the shared CoDesign page.
+- Added `VISUAL_DIFF_IMAGE_INVALID`, `VISUAL_DIFF_ALIGNMENT`, and `VISUAL_DIFF_PAGE_INVALID` error codes; `pageUrl` is restricted to local loopback hosts.
+
+### Changed
+
+- Updated the design-to-code prompt, workflow resource, README, and skill to include optional `visual_diff` as the L3 visual-regression layer.
+
 ## 0.3.4 - 2026-11-26
 
 ### Added

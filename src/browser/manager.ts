@@ -46,6 +46,9 @@ export interface BrowserSnapshot {
 
 export interface BrowserManagerApi {
   acquireHeadless(): Promise<BrowserCallContext>;
+  // 独立的 headless 页，用完即关。用于访问任意 URL（如本地 dev server）截图，
+  // 避免污染共享的 CoDesign 页（共享页会被 ensureOnOrigin 拉回 codesign.qq.com）。
+  acquireHeadlessIsolated(): Promise<BrowserCallContext>;
   acquireHeaded(): Promise<BrowserCallContext>;
   shutdown(reason: string): Promise<void>;
   snapshot(): BrowserSnapshot;
@@ -220,6 +223,9 @@ export function createBrowserManager(launcher: BrowserLauncher = defaultLauncher
   return {
     acquireHeadless(): Promise<BrowserCallContext> {
       return acquireCall('headless', true);
+    },
+    acquireHeadlessIsolated(): Promise<BrowserCallContext> {
+      return acquireCall('headless', false);
     },
     acquireHeaded(): Promise<BrowserCallContext> {
       return acquireCall('headed', false);

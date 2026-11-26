@@ -6,6 +6,7 @@ import { registerSpecTool } from './tools/spec.js';
 import { registerImageTool } from './tools/image.js';
 import { registerSlicesTool } from './tools/slices.js';
 import { registerVerifyRenderingTool } from './tools/verify-rendering.js';
+import { registerVisualDiffTool } from './tools/visual-diff.js';
 import { registerDiagnosticsTool } from './tools/diagnostics.js';
 import { registerDesignToCodePrompt } from './prompts/design-to-code.js';
 import { registerWorkflowResource } from './resources/workflow.js';
@@ -38,6 +39,7 @@ export function buildServer(): McpServer {
   registerImageTool(server);
   registerSlicesTool(server);
   registerVerifyRenderingTool(server);
+  registerVisualDiffTool(server);
   registerDiagnosticsTool(server);
   registerDesignToCodePrompt(server);
   registerWorkflowResource(server);

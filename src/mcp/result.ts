@@ -163,6 +163,27 @@ export function summarizeVerifyPayload(payload: Record<string, unknown>): string
   return lines.join('\n');
 }
 
+export function summarizeVisualDiffPayload(payload: Record<string, unknown>): string {
+  const lines: string[] = ['visual_diff:'];
+  const score = typeof payload.score === 'number' ? payload.score.toFixed(4) : String(payload.score ?? '?');
+  lines.push(`score: ${score} (verdict ${String(payload.verdict ?? '?')})`);
+  lines.push(`diff pixels: ${String(payload.diffPixels ?? '?')} / ${String(payload.totalPixels ?? '?')}`);
+  const alignment = payload.alignment as { target?: { width?: number; height?: number } } | undefined;
+  if (alignment?.target) {
+    lines.push(`viewport: ${alignment.target.width ?? '?'}x${alignment.target.height ?? '?'}`);
+  }
+  const hotspots = Array.isArray(payload.hotspots) ? (payload.hotspots as Array<{ x?: number; y?: number; diffRatio?: number }>) : [];
+  if (hotspots.length > 0) {
+    const preview = hotspots.slice(0, 3)
+      .map((h) => `(${h.x ?? 0},${h.y ?? 0})=${((h.diffRatio ?? 0) * 100).toFixed(0)}%`)
+      .join(' ');
+    lines.push(`top hotspots: ${preview}`);
+  }
+  if (typeof payload.diffImagePath === 'string') lines.push(`diff image: ${payload.diffImagePath}`);
+  lines.push('Score is a regression signal, not a pass/fail verdict. Full data is in structuredContent.');
+  return lines.join('\n');
+}
+
 // 诊断记录本身就是给 LLM 阅读的内容，默认保留完整文本但不加缩进。
 export function toolSuccessFull(payload: Record<string, unknown>): ToolResult {
   const structuredContent = { ok: true, ...payload };

@@ -23,6 +23,9 @@ export const ERROR_CODES = [
   'ARTIFACT_MAGIC_MISMATCH',
   'ARTIFACT_PATH_INVALID',
   'CODE_FILE_INVALID',
+  'VISUAL_DIFF_IMAGE_INVALID',
+  'VISUAL_DIFF_ALIGNMENT',
+  'VISUAL_DIFF_PAGE_INVALID',
 ] as const;
 
 export type ErrorCode = (typeof ERROR_CODES)[number];

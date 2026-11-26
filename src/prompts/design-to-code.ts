@@ -93,7 +93,7 @@ export function registerDesignToCodePrompt(server: McpServer): void {
     {
       title: 'Implement CoDesign Page',
       description:
-        'Generate a design-to-code workflow prompt that uses list_artboards, get_artboard_spec, download_slice, and verify_rendering in order.',
+        'Generate a design-to-code workflow prompt that uses list_artboards, get_artboard_spec, download_slice, verify_rendering, and optionally visual_diff in order.',
       argsSchema,
     },
     async ({
@@ -188,6 +188,7 @@ Requirements:
 10. Mark every slice usage in code with data-slice-id="<layerObjectId>" (attribute) or /* slice:<layerObjectId> */ (comment) so it can be verified.
 11. Implement the page in the target directory when one is provided, following the existing project structure and styles.
 12. Before finishing, call verify_rendering with the written code files and the same platform options. Fix every error issue (size, scale, color, typography, radius, hierarchy), re-run until ok is true, and manually review every item in reviewRequired. It re-fetches the official spec itself, so pass the real file paths, not copied measurements.
-13. Use get_artboard_image only for visual comparison and final review.
-14. Surface any CoDesign access, password, login, or missing-spec failure clearly instead of fabricating design data.`;
+13. If a local dev server is available, optionally call visual_diff with its pageUrl and the same artboard selector to get a 0..1 similarity score as an extra regression signal. Compare scores across iterations rather than treating one score as pass/fail; a drop means a change hurt fidelity. Font rasterization can lower the score.
+14. Use get_artboard_image only for visual comparison and final review.
+15. Surface any CoDesign access, password, login, or missing-spec failure clearly instead of fabricating design data.`;
 }
