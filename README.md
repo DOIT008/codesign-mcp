@@ -102,6 +102,7 @@ CODESIGN_LOG_FILE=F:/your-project/.codesign-mcp/codesign-mcp.log
 CODESIGN_IDLE_MS=600000
 CODESIGN_KEEP_BROWSER=1
 CODESIGN_CACHE_TTL_MS=60000
+CODESIGN_INTEGRITY_STRICT=0
 CODESIGN_LOG_LEVEL=info
 ```
 
@@ -123,6 +124,12 @@ Sharing details, meta JSON, and slice manifests are cached in memory for 60 seco
 Successful tool results keep the complete payload in `structuredContent`. `content[0].text` contains only a short summary, so the same JSON is not counted twice in the model context. If your MCP client does not read `structuredContent`, pass `includeFullText: true` to any data tool (`list_artboards`, `get_artboard_spec`, `get_artboard_image`, `download_slice`) to receive the full JSON as text instead. `debug_collect_network` keeps full records in the text channel because those records are the diagnostic output itself.
 
 All headless tools reuse one browser page, so the sharing page is opened only once per session instead of once per tool call. The headed login window uses an exclusive page and mode switches wait for in-flight calls to finish.
+
+## Data integrity
+
+Responses are validated before they enter the cache, so an incomplete spec, manifest, or sharing detail is never cached or returned as a successful result. `list_artboards`, `get_artboard_spec`, and `download_slice` include an `integrity` field with `ok`, `warnings`, and `stats`. Structural corruption (duplicate layer ids, malformed rects, empty layer trees, missing `screenshot.url`) fails the tool. Ambiguous findings, such as orphaned `parent_id`, are warnings by default; set `CODESIGN_INTEGRITY_STRICT=1` to make warnings fatal.
+
+Two CoDesign fields are deliberately **not** used as completeness checks, based on real sharing data: `slices_count` does not equal the number of manifest items, and slice `exportables[].size` is an export multiplier (for example `3`), not a byte count. `download_slice` only uses `screenshot.length` / `screenshot.size` as byte hints when they are present and positive; otherwise it verifies each file against HTTP `Content-Length` (when the response is not compressed), its MIME type, and its magic bytes. Each download result carries `verified` with the byte count, detected format, SHA-256, and encoding. Exportables without a URL are reported in `skipped` instead of being silently dropped, and `requested` / `downloaded` / `reused` counts are returned so partial results are visible.
 
 ## Security Notes
 
@@ -314,6 +321,7 @@ CODESIGN_LOG_FILE=F:/your-project/.codesign-mcp/codesign-mcp.log
 CODESIGN_IDLE_MS=600000
 CODESIGN_KEEP_BROWSER=1
 CODESIGN_CACHE_TTL_MS=60000
+CODESIGN_INTEGRITY_STRICT=0
 CODESIGN_LOG_LEVEL=info
 ```
 
@@ -335,6 +343,12 @@ CODESIGN_LOG_LEVEL=info
 工具成功结果把完整数据放在 `structuredContent` 中，`content[0].text` 只返回简短摘要，避免同一份 JSON 在模型上下文里被计算两次。如果你的 MCP 客户端不读取 `structuredContent`，可以对任意数据工具（`list_artboards`、`get_artboard_spec`、`get_artboard_image`、`download_slice`）传 `includeFullText: true`，改为接收完整 JSON 文本。`debug_collect_network` 的诊断记录本身就是输出内容，因此仍在文本通道中保留完整记录。
 
 所有 headless 工具复用同一个浏览器页面，分享页在每个会话中只打开一次，而不是每次工具调用都打开。登录用的 headed 窗口使用独占页面，模式切换会等待正在进行的调用结束。
+
+## 数据完整性
+
+响应在进入缓存前会先经过校验，因此不完整的标注、切图清单或分享详情不会被缓存，也不会作为成功结果返回。`list_artboards`、`get_artboard_spec` 和 `download_slice` 会返回 `integrity` 字段，包含 `ok`、`warnings` 和 `stats`。结构性损坏（图层 object_id 重复、rect 非法、图层树为空、缺少 `screenshot.url`）会直接让工具失败；语义存疑的情况（例如 `parent_id` 悬空）默认只告警，设置 `CODESIGN_INTEGRITY_STRICT=1` 可让告警也升级为错误。
+
+基于真实分享数据的实测，CoDesign 有两个字段**不能**用于完整性判断：`slices_count` 不等于切图清单条目数，`exportables[].size` 是导出倍率（例如 `3`）而不是字节数。`download_slice` 只有在 `screenshot.length` / `screenshot.size` 存在且为正数时才把它们当作字节数；否则通过 HTTP `Content-Length`（响应未压缩时）、MIME 类型和文件魔数校验每个文件。每个下载项都带 `verified` 字段，记录字节数、识别出的格式、SHA-256 和编码方式。没有 URL 的导出项会进入 `skipped` 而不是被静默丢弃，同时返回 `requested` / `downloaded` / `reused` 计数，让部分成功可见。
 
 ## 安全说明
 

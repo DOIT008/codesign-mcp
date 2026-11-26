@@ -1,8 +1,9 @@
 import type { McpServer } from '../mcp/server.js';
 import { objectSchema } from '../mcp/schema.js';
 import { browserManager } from '../browser/manager.js';
-import { getCachedSharingDetail, fetchCachedMetaJson, fetchCachedSliceManifest } from '../codesign/cache.js';
-import { assertSpecObject, normalizeSpec, findLayerByObjectId } from '../codesign/parser.js';
+import { getCachedSharingDetail, fetchCachedSpec, fetchCachedSliceManifest } from '../codesign/cache.js';
+import { normalizeSpec, findLayerByObjectId } from '../codesign/parser.js';
+import { inspectSpec, integrityView } from '../codesign/integrity.js';
 import { buildPlatformSpec, supportedTargetPlatforms } from '../codesign/platform.js';
 import {
   buildLayerSelection,
@@ -184,15 +185,15 @@ export function registerSpecTool(server: McpServer): void {
           );
         }
 
-        // 拉 meta JSON
-        const specRaw = await fetchCachedMetaJson<unknown>(picked.meta_url);
+        // 拉 meta JSON；缓存入口已做 schema + 完整性校验，失败结果不会入缓存。
+        let spec: SpecObject;
         try {
-          assertSpecObject(specRaw);
+          spec = await fetchCachedSpec(picked.meta_url);
         } catch (err) {
-          log.warn({ err: (err as Error).message }, 'spec schema mismatch');
+          log.warn({ err: errMsg(err) }, 'spec schema or integrity mismatch');
           return errorResult(err);
         }
-        const spec = specRaw as SpecObject;
+        const specIntegrity = integrityView(inspectSpec(spec));
 
         let slices = undefined;
         if (includeSlices && picked.slices_url) {
@@ -235,6 +236,7 @@ export function registerSpecTool(server: McpServer): void {
           return toolSuccess({
             sharingId,
             screen: { id: picked.id, objectId: picked.object_id, name: picked.name },
+            integrity: specIntegrity,
             layer,
             selection,
             platformLayer: platformSpec
@@ -259,6 +261,7 @@ export function registerSpecTool(server: McpServer): void {
         return toolSuccess({
           sharingId,
           screen: { id: picked.id, objectId: picked.object_id, name: picked.name },
+          integrity: specIntegrity,
           supportedTargetPlatforms: supportedTargetPlatforms(),
           spec: normalized,
         }, includeFullText);

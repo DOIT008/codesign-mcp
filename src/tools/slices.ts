@@ -1,11 +1,13 @@
+import { createHash } from 'node:crypto';
 import type { McpServer } from '../mcp/server.js';
 import { objectSchema } from '../mcp/schema.js';
 import { browserManager } from '../browser/manager.js';
 import { getCachedSharingDetail, fetchCachedSliceManifest } from '../codesign/cache.js';
 import { findSliceByObjectId } from '../codesign/slices.js';
+import { inspectManifest, integrityView } from '../codesign/integrity.js';
 import { CodesignError } from '../codesign/errors.js';
 import { normalizeCodesignAssetUrl, parseSharingId } from '../utils/url.js';
-import { downloadToArtifact } from '../utils/download.js';
+import { downloadToArtifact, type ArtifactVerification } from '../utils/download.js';
 import { encodeFilenameComponent } from '../utils/filename.js';
 import { errorResult } from './artboards.js';
 import { toolSuccess } from '../mcp/result.js';
@@ -152,6 +154,7 @@ export function registerSlicesTool(server: McpServer): void {
           );
         }
 
+        const integrity = integrityView(inspectManifest(manifest));
         const downloads: Array<{
           format?: string;
           scale?: number;
@@ -161,15 +164,40 @@ export function registerSlicesTool(server: McpServer): void {
           bytes: number;
           mime: string | null;
           reusedExisting?: boolean;
+          verified: ArtifactVerification;
         }> = [];
+        const skipped: Array<{
+          name?: string;
+          objectId?: string;
+          format?: string;
+          scale?: number;
+          reason: string;
+        }> = [];
+        const usedFilenames = new Set<string>();
+
         for (const e of filteredExportables) {
           const url = e.screenshot?.url;
           if (!url) {
-            log.warn({ exportable: e.name }, 'exportable has no screenshot.url');
+            const reason = 'exportable has no screenshot.url';
+            log.warn({ exportable: e.name }, reason);
+            skipped.push({
+              name: e.name,
+              objectId: e.object_id,
+              format: e.format,
+              scale: e.scale,
+              reason,
+            });
             continue;
           }
           const downloadUrl = normalizeCodesignAssetUrl(url);
-          const filename = `${encodeFilenameComponent(slice.object_id)}-${e.scale ?? 1}x.${e.format ?? extFromMime(e.screenshot?.mime) ?? 'png'}`;
+          const ext = e.format ?? extFromMime(e.screenshot?.mime) ?? 'png';
+          const baseName = `${encodeFilenameComponent(slice.object_id)}-${e.scale ?? 1}x.${ext}`;
+          // 真实数据中 exportable.size 是倍率而非字节数，不能当作 expectedBytes。
+          const expectedBytes = declaredByteLength(e.screenshot?.length) ?? declaredByteLength(e.screenshot?.size);
+          const filename = usedFilenames.has(baseName)
+            ? `${baseName.slice(0, -ext.length - 1)}-${urlHash(url)}.${ext}`
+            : baseName;
+          usedFilenames.add(filename);
           const dl = await downloadToArtifact(
             downloadUrl,
             `${sharingId}/slices`,
@@ -178,7 +206,9 @@ export function registerSlicesTool(server: McpServer): void {
             {
               request: call.context.request,
               headers: SLICE_DOWNLOAD_HEADERS,
-              expectedBytes: e.screenshot?.length ?? e.screenshot?.size ?? e.size,
+              expectedBytes,
+              expectedMime: e.screenshot?.mime,
+              expectedFormat: e.format,
             },
           );
           downloads.push({
@@ -190,6 +220,7 @@ export function registerSlicesTool(server: McpServer): void {
             bytes: dl.bytes,
             mime: dl.mime,
             reusedExisting: dl.reusedExisting,
+            verified: dl.verified,
           });
         }
 
@@ -198,10 +229,13 @@ export function registerSlicesTool(server: McpServer): void {
             new CodesignError('SLICE_FETCH_FAILED', 'matched exportables did not contain downloadable screenshot URLs', {
               layerObjectId,
               filters: { format, scales },
+              skipped,
+              integrity,
             }),
           );
         }
 
+        const reused = downloads.filter((d) => d.reusedExisting).length;
         return toolSuccess({
           sharingId,
           screen: { id: picked.id, objectId: picked.object_id, name: picked.name },
@@ -210,6 +244,11 @@ export function registerSlicesTool(server: McpServer): void {
             objectId: slice.object_id,
             rect: slice.rect,
           },
+          requested: filteredExportables.length,
+          downloaded: downloads.length,
+          reused,
+          skipped,
+          integrity,
           downloads,
         }, includeFullText);
       } catch (err) {
@@ -220,6 +259,14 @@ export function registerSlicesTool(server: McpServer): void {
       }
     },
   );
+}
+
+export function declaredByteLength(value: unknown): number | undefined {
+  return typeof value === 'number' && Number.isSafeInteger(value) && value > 0 ? value : undefined;
+}
+
+function urlHash(url: string): string {
+  return createHash('sha256').update(url).digest('hex').slice(0, 8);
 }
 
 function acceptExportable(

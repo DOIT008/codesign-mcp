@@ -1,4 +1,4 @@
-import { mkdirSync, renameSync, rmSync, statSync, writeFileSync } from 'node:fs';
+import { mkdirSync, readFileSync, renameSync, rmSync, statSync, writeFileSync } from 'node:fs';
 import { resolve, dirname, extname, basename, relative, isAbsolute, sep } from 'node:path';
 import { createHash } from 'node:crypto';
 import type { APIRequestContext } from 'playwright';
@@ -14,6 +14,15 @@ const DEFAULT_HEADERS: Record<string, string> = {
 
 const FILE_COMMIT_RETRY_DELAYS_MS = [50, 150, 350] as const;
 
+export interface ArtifactVerification {
+  bytes: number;
+  sha256: string;
+  format: string;
+  reused: boolean;
+  contentLength: string | null;
+  contentEncoding: string | null;
+}
+
 export interface DownloadResult {
   url: string;
   path: string;
@@ -21,12 +30,15 @@ export interface DownloadResult {
   mime: string | null;
   reusedExisting?: boolean;
   writeAttempts?: number;
+  verified: ArtifactVerification;
 }
 
 export interface DownloadOptions {
   request?: APIRequestContext;
   headers?: Record<string, string>;
   expectedBytes?: number;
+  expectedMime?: string;
+  expectedFormat?: string;
 }
 
 // 把 URL 下载到 data/artifacts/<subdir>/<filename>。filename 为空时根据 URL 推断或哈希。
@@ -48,6 +60,7 @@ export async function downloadToArtifact(
 
   const existing = getExistingArtifact(finalPath, options.expectedBytes);
   if (existing) {
+    const buf = readExistingArtifact(finalPath);
     return {
       url,
       path: finalPath,
@@ -55,6 +68,14 @@ export async function downloadToArtifact(
       mime: null,
       reusedExisting: true,
       writeAttempts: 0,
+      verified: {
+        bytes: existing.bytes,
+        sha256: sha256(buf),
+        format: detectArtifactFormat(buf),
+        reused: true,
+        contentLength: null,
+        contentEncoding: null,
+      },
     };
   }
 
@@ -65,20 +86,46 @@ export async function downloadToArtifact(
     const resp = options.request
       ? await fetchWithBrowserContext(options.request, remoteUrl, headers)
       : await fetchWithNode(remoteUrl, headers, controller.signal);
-    if (!resp.ok) {
+    if (!resp.ok || resp.status !== 200) {
       throw new CodesignError(errorCode, `download failed: HTTP ${resp.status}`, {
         url: remoteUrl,
         status: resp.status,
       });
     }
     const buf = resp.body;
+    const format = assertArtifactIntegrity(buf, remoteUrl, {
+      expectedBytes: options.expectedBytes,
+      expectedMime: options.expectedMime,
+      expectedFormat: options.expectedFormat,
+      mime: resp.mime,
+      contentLength: resp.contentLength,
+      contentEncoding: resp.contentEncoding,
+    });
     const writeAttempts = await commitArtifactWithRetry(finalPath, buf);
+    const committedBytes = statSync(finalPath).size;
+    if (committedBytes !== buf.byteLength) {
+      rmSync(finalPath, { force: true });
+      throw new CodesignError('ARTIFACT_SIZE_MISMATCH', 'committed artifact size differs from downloaded bytes', {
+        url: remoteUrl,
+        path: finalPath,
+        expected: buf.byteLength,
+        actual: committedBytes,
+      });
+    }
     return {
       url: remoteUrl,
       path: finalPath,
       bytes: buf.byteLength,
       mime: resp.mime,
       writeAttempts,
+      verified: {
+        bytes: buf.byteLength,
+        sha256: sha256(buf),
+        format,
+        reused: false,
+        contentLength: resp.contentLength,
+        contentEncoding: resp.contentEncoding,
+      },
     };
   } catch (err) {
     if (err instanceof CodesignError) throw err;
@@ -150,17 +197,28 @@ function delay(ms: number): Promise<void> {
   return new Promise((resolveDelay) => setTimeout(resolveDelay, ms));
 }
 
+interface FetchResult {
+  ok: boolean;
+  status: number;
+  body: Buffer;
+  mime: string | null;
+  contentLength: string | null;
+  contentEncoding: string | null;
+}
+
 async function fetchWithNode(
   url: string,
   headers: Record<string, string>,
   signal: AbortSignal,
-): Promise<{ ok: boolean; status: number; body: Buffer; mime: string | null }> {
+): Promise<FetchResult> {
   const resp = await fetch(url, { headers, signal });
   return {
     ok: resp.ok,
     status: resp.status,
     body: Buffer.from(await resp.arrayBuffer()),
     mime: resp.headers.get('content-type'),
+    contentLength: resp.headers.get('content-length'),
+    contentEncoding: resp.headers.get('content-encoding'),
   };
 }
 
@@ -168,7 +226,7 @@ async function fetchWithBrowserContext(
   request: APIRequestContext,
   url: string,
   headers: Record<string, string>,
-): Promise<{ ok: boolean; status: number; body: Buffer; mime: string | null }> {
+): Promise<FetchResult> {
   const resp = await request.get(url, { headers, timeout: config.metaTimeoutMs });
   const responseHeaders = resp.headers();
   return {
@@ -176,7 +234,98 @@ async function fetchWithBrowserContext(
     status: resp.status(),
     body: await resp.body(),
     mime: responseHeaders['content-type'] ?? null,
+    contentLength: responseHeaders['content-length'] ?? null,
+    contentEncoding: responseHeaders['content-encoding'] ?? null,
   };
+}
+
+function sha256(buf: Buffer): string {
+  return createHash('sha256').update(buf).digest('hex');
+}
+
+function readExistingArtifact(path: string): Buffer {
+  return readFileSync(path);
+}
+
+// 魔数嗅探：识别真实图片格式，同时识别 HTML/XML 错误页。
+export function detectArtifactFormat(buf: Buffer): string {
+  if (buf.subarray(0, 8).equals(Buffer.from([0x89, 0x50, 0x4e, 0x47, 0x0d, 0x0a, 0x1a, 0x0a]))) return 'png';
+  if (buf.length > 3 && buf[0] === 0xff && buf[1] === 0xd8 && buf[2] === 0xff) return 'jpeg';
+  if (
+    buf.length > 12 &&
+    buf.subarray(0, 4).toString('ascii') === 'RIFF' &&
+    buf.subarray(8, 12).toString('ascii') === 'WEBP'
+  ) return 'webp';
+  if (buf.subarray(0, 4).toString('ascii') === 'GIF8') return 'gif';
+  const head = buf.subarray(0, 512).toString('utf8').replace(/^\uFEFF/, '');
+  if (/^(?:\s|<\?xml[^>]*>|<!--[\s\S]*?-->|<!DOCTYPE[^>]*>)*<svg[\s>]/i.test(head)) return 'svg';
+  if (/^\s*(?:<\?xml|<!DOCTYPE\s+html|<html)/i.test(head)) return 'error-page';
+  return 'unknown';
+}
+
+function formatMatches(format: string, expected: string): boolean {
+  const normalized = expected.toLowerCase().replace(/^image\//, '');
+  if (normalized === 'jpg' || normalized === 'jpeg') return format === 'jpeg';
+  if (normalized === 'svg' || normalized === 'svg+xml') return format === 'svg';
+  return format === normalized;
+}
+
+export function assertArtifactIntegrity(
+  buf: Buffer,
+  url: string,
+  opts: {
+    expectedBytes?: number;
+    expectedMime?: string;
+    expectedFormat?: string;
+    mime: string | null;
+    contentLength: string | null;
+    contentEncoding: string | null;
+  },
+): string {
+  const encoding = opts.contentEncoding?.toLowerCase() ?? '';
+  if (opts.expectedBytes != null && Number.isSafeInteger(opts.expectedBytes) && opts.expectedBytes > 0) {
+    if (buf.byteLength !== opts.expectedBytes) {
+      throw new CodesignError('ARTIFACT_SIZE_MISMATCH', 'downloaded size differs from declared size', {
+        url,
+        expected: opts.expectedBytes,
+        actual: buf.byteLength,
+      });
+    }
+  }
+  if (opts.contentLength && !encoding) {
+    const declared = Number(opts.contentLength);
+    if (Number.isSafeInteger(declared) && declared >= 0 && buf.byteLength !== declared) {
+      throw new CodesignError('ARTIFACT_SIZE_MISMATCH', 'downloaded size differs from Content-Length', {
+        url,
+        expected: declared,
+        actual: buf.byteLength,
+      });
+    }
+  }
+  const format = detectArtifactFormat(buf);
+  if (format === 'error-page') {
+    throw new CodesignError('ARTIFACT_MAGIC_MISMATCH', 'downloaded body looks like an HTML/XML error page', {
+      url,
+      mime: opts.mime,
+      bytes: buf.byteLength,
+    });
+  }
+  if (opts.expectedFormat && format !== 'unknown' && !formatMatches(format, opts.expectedFormat)) {
+    throw new CodesignError('ARTIFACT_MAGIC_MISMATCH', 'downloaded format differs from manifest format', {
+      url,
+      expected: opts.expectedFormat,
+      actual: format,
+    });
+  }
+  if (opts.expectedMime && format !== 'unknown' && !formatMatches(format, opts.expectedMime)) {
+    throw new CodesignError('ARTIFACT_MAGIC_MISMATCH', 'downloaded format differs from declared MIME type', {
+      url,
+      expected: opts.expectedMime,
+      actual: format,
+      mime: opts.mime,
+    });
+  }
+  return format;
 }
 
 function deriveFilename(url: string): string {

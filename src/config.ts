@@ -85,6 +85,7 @@ export const config = {
   idleMs: envInt('CODESIGN_IDLE_MS', 10 * 60 * 1000),
   keepBrowser: envBool('CODESIGN_KEEP_BROWSER', false),
   cacheTtlMs: envInt('CODESIGN_CACHE_TTL_MS', 60_000),
+  integrityStrict: envBool('CODESIGN_INTEGRITY_STRICT', false),
   origin: 'https://codesign.qq.com',
   homePath: '/app/design',
   navTimeoutMs: envInt('CODESIGN_NAV_TIMEOUT_MS', 30_000),

@@ -7,6 +7,7 @@ import { test } from 'node:test';
 import assert from 'node:assert/strict';
 
 import { findSliceByObjectId } from '../dist/codesign/slices.js';
+import { declaredByteLength } from '../dist/tools/slices.js';
 import { CodesignError } from '../dist/codesign/errors.js';
 import { encodeFilenameComponent } from '../dist/utils/filename.js';
 
@@ -69,4 +70,11 @@ test('encodeFilenameComponent makes Figma-style object ids Windows-safe', () => 
 
 test('encodeFilenameComponent does not collide with already percent-encoded ids', () => {
   assert.notEqual(encodeFilenameComponent('node:id'), encodeFilenameComponent('node%3Aid'));
+});
+
+test('declaredByteLength only accepts positive safe integers', () => {
+  assert.equal(declaredByteLength(4096), 4096);
+  assert.equal(declaredByteLength(0), undefined);
+  assert.equal(declaredByteLength(3), 3);
+  assert.equal(declaredByteLength('4096'), undefined);
 });

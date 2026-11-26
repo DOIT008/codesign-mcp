@@ -5,7 +5,9 @@ import assert from 'node:assert/strict';
 
 import { config } from '../dist/config.js';
 import { CodesignError } from '../dist/codesign/errors.js';
-import { downloadToArtifact } from '../dist/utils/download.js';
+import { assertArtifactIntegrity, detectArtifactFormat, downloadToArtifact } from '../dist/utils/download.js';
+
+const PNG = Buffer.from('89504e470d0a1a0a0000000d49484452', 'hex');
 
 const testSubdir = `download-test-${process.pid}`;
 const testRoot = resolve(config.artifactsDir, testSubdir);
@@ -116,8 +118,9 @@ test('downloadToArtifact derives fallback filenames with SHA-256', async () => {
   assert.equal(readFileSync(result.path, 'utf8'), 'new!');
 });
 
-function fakeRequest(body) {
+function fakeRequest(body, opts = {}) {
   let callCount = 0;
+  const headers = { 'content-type': 'application/octet-stream', ...(opts.headers ?? {}) };
   return {
     calls() {
       return callCount;
@@ -125,11 +128,112 @@ function fakeRequest(body) {
     async get() {
       callCount += 1;
       return {
-        ok: () => true,
-        status: () => 200,
-        headers: () => ({ 'content-type': 'application/octet-stream' }),
-        body: async () => Buffer.from(body),
+        ok: () => (opts.status ?? 200) < 400,
+        status: () => opts.status ?? 200,
+        headers: () => headers,
+        body: async () => Buffer.isBuffer(body) ? body : Buffer.from(body),
       };
     },
   };
 }
+
+test('downloadToArtifact rejects a body whose size differs from Content-Length', async () => {
+  const request = fakeRequest('ab', { headers: { 'content-length': '10' } });
+  await assert.rejects(
+    () => downloadToArtifact(
+      'https://cdn4.codesign.qq.com/a.png',
+      `${testSubdir}/content-length`,
+      'a.png',
+      'SLICE_FETCH_FAILED',
+      { request },
+    ),
+    (err) => {
+      assert.ok(err instanceof CodesignError);
+      assert.equal(err.code, 'ARTIFACT_SIZE_MISMATCH');
+      return true;
+    },
+  );
+});
+
+test('downloadToArtifact rejects an HTML error page saved as an image', async () => {
+  const request = fakeRequest('<html><body>403 Forbidden</body></html>');
+  await assert.rejects(
+    () => downloadToArtifact(
+      'https://cdn4.codesign.qq.com/b.png',
+      `${testSubdir}/html`,
+      'b.png',
+      'SLICE_FETCH_FAILED',
+      { request, expectedFormat: 'png' },
+    ),
+    (err) => {
+      assert.ok(err instanceof CodesignError);
+      assert.equal(err.code, 'ARTIFACT_MAGIC_MISMATCH');
+      return true;
+    },
+  );
+});
+
+test('downloadToArtifact rejects a PNG body when the manifest declares svg', async () => {
+  const request = fakeRequest(PNG, { headers: { 'content-type': 'image/png' } });
+  await assert.rejects(
+    () => downloadToArtifact(
+      'https://cdn4.codesign.qq.com/c.svg',
+      `${testSubdir}/wrong-format`,
+      'c.svg',
+      'SLICE_FETCH_FAILED',
+      { request, expectedFormat: 'svg' },
+    ),
+    (err) => {
+      assert.ok(err instanceof CodesignError);
+      assert.equal(err.code, 'ARTIFACT_MAGIC_MISMATCH');
+      return true;
+    },
+  );
+});
+
+test('downloadToArtifact skips Content-Length check for gzip responses', async () => {
+  const request = fakeRequest(PNG, {
+    headers: { 'content-type': 'image/png', 'content-length': '9999', 'content-encoding': 'gzip' },
+  });
+  const result = await downloadToArtifact(
+    'https://cdn4.codesign.qq.com/d.png',
+    `${testSubdir}/gzip`,
+    'd.png',
+    'SLICE_FETCH_FAILED',
+    { request, expectedFormat: 'png' },
+  );
+  assert.equal(result.verified.format, 'png');
+  assert.equal(result.verified.reused, false);
+  assert.equal(result.verified.contentEncoding, 'gzip');
+});
+
+test('downloadToArtifact returns sha256 and detected format on success', async () => {
+  const request = fakeRequest(PNG, { headers: { 'content-type': 'image/png' } });
+  const result = await downloadToArtifact(
+    'https://cdn4.codesign.qq.com/e.png',
+    `${testSubdir}/ok`,
+    'e.png',
+    'SLICE_FETCH_FAILED',
+    { request, expectedFormat: 'png', expectedMime: 'image/png' },
+  );
+  assert.equal(result.verified.format, 'png');
+  assert.equal(result.verified.bytes, PNG.length);
+  assert.match(result.verified.sha256, /^[0-9a-f]{64}$/);
+});
+
+test('detectArtifactFormat recognizes svg with an XML declaration', () => {
+  const svg = Buffer.from('<?xml version="1.0"?>\n<svg xmlns="http://www.w3.org/2000/svg"></svg>');
+  assert.equal(detectArtifactFormat(svg), 'svg');
+});
+
+test('assertArtifactIntegrity rejects a declared byte mismatch', () => {
+  assert.throws(
+    () => assertArtifactIntegrity(PNG, 'https://cdn4.codesign.qq.com/x.png', {
+      expectedBytes: 999,
+      mime: 'image/png',
+      contentLength: null,
+      contentEncoding: null,
+    }),
+    (err) => err instanceof CodesignError && err.code === 'ARTIFACT_SIZE_MISMATCH',
+  );
+});

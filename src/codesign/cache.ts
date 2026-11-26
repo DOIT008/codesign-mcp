@@ -9,7 +9,9 @@ import { getLogger } from '../logger.js';
 import { getSharingDetail } from './sharing.js';
 import { fetchMetaJson } from './meta.js';
 import { fetchSliceManifest } from './slices.js';
-import type { SharingDetail, SliceManifest } from './types.js';
+import { assertSpecObject } from './parser.js';
+import { enforceIntegrity, inspectManifest, inspectSharingDetail, inspectSpec } from './integrity.js';
+import type { SharingDetail, SliceManifest, SpecObject } from './types.js';
 
 const log = getLogger();
 
@@ -52,8 +54,14 @@ export async function cached<T>(key: string, loader: () => Promise<T>): Promise<
   return task;
 }
 
-export function clearCache(): void {
-  entries.clear();
+export function clearCache(prefix?: string): void {
+  if (!prefix) {
+    entries.clear();
+    return;
+  }
+  for (const key of entries.keys()) {
+    if (key.startsWith(prefix)) entries.delete(key);
+  }
 }
 
 export function cacheStats(): { entries: number; inflight: number; ttlMs: number } {
@@ -68,13 +76,32 @@ export async function getCachedSharingDetail(
 ): Promise<{ detail: SharingDetail; stateKey?: string }> {
   const credential = password ? hashCredential(password) : 'none';
   const key = `sharing:${sharingId}:${credential}`;
-  return cached(key, () => getSharingDetail(page, sharingId, password));
+  return cached(key, async () => {
+    const result = await getSharingDetail(page, sharingId, password);
+    enforceIntegrity(inspectSharingDetail(result.detail), 'SHARING_INCOMPLETE');
+    return result;
+  });
 }
 
 export async function fetchCachedMetaJson<T = unknown>(url: string): Promise<T> {
   return cached(`meta:${url}`, () => fetchMetaJson<T>(url));
 }
 
+// spec 专用入口：校验通过后才写入缓存，失败结果不会被缓存。
+export async function fetchCachedSpec(url: string): Promise<SpecObject> {
+  return cached(`meta:${url}`, async () => {
+    const raw = await fetchMetaJson<unknown>(url);
+    assertSpecObject(raw);
+    const spec = raw as SpecObject;
+    enforceIntegrity(inspectSpec(spec), 'META_INCOMPLETE');
+    return spec;
+  });
+}
+
 export async function fetchCachedSliceManifest(url: string): Promise<SliceManifest> {
-  return cached(`slices:${url}`, () => fetchSliceManifest(url));
+  return cached(`slices:${url}`, async () => {
+    const manifest = await fetchSliceManifest(url);
+    enforceIntegrity(inspectManifest(manifest), 'SLICE_INCOMPLETE');
+    return manifest;
+  });
 }

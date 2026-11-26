@@ -2,6 +2,7 @@ import type { McpServer } from '../mcp/server.js';
 import { objectSchema } from '../mcp/schema.js';
 import { browserManager } from '../browser/manager.js';
 import { getCachedSharingDetail } from '../codesign/cache.js';
+import { inspectSharingDetail, integrityView } from '../codesign/integrity.js';
 import { parseSharingId } from '../utils/url.js';
 import { getLogger } from '../logger.js';
 import { toolSuccess, toolError as buildErrorResult } from '../mcp/result.js';
@@ -88,6 +89,7 @@ export function registerArtboardsTool(server: McpServer): void {
           title: detail.title,
           designCount: designs.length,
           screenCount: totalScreens,
+          integrity: integrityView(inspectSharingDetail(detail)),
           designs,
           stateKey: stateKey ? '<acquired>' : null,
         }, includeFullText);
